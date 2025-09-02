@@ -111,6 +111,7 @@ export interface TaskItem {
   createdAt: string
   processedAt?: string
   error?: string
+  debugLogs?: DebugLog[]
 }
 
 export interface TaskResult {
@@ -120,6 +121,7 @@ export interface TaskResult {
   localPath?: string
   downloaded: boolean
   createdAt: string
+  durationMs?: number
 }
 
 export interface BatchQueue {
@@ -151,4 +153,13 @@ export interface DownloadConfig {
   organizeByDate: boolean
   organizeByTask: boolean
   filenameTemplate: string
+} 
+
+export interface DebugLog {
+  id: string
+  taskItemId: string
+  timestamp: string
+  type: 'request' | 'response' | 'error'
+  data: any
+  duration?: number
 } 

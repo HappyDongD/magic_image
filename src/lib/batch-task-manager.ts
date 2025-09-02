@@ -1,4 +1,4 @@
-import { BatchTask, BatchTaskStatus, TaskItem, TaskResult, BatchTaskConfig, ModelConfig, TaskType } from '@/types'
+import { BatchTask, BatchTaskStatus, TaskItem, TaskResult, BatchTaskConfig, ModelConfig, TaskType, DebugLog } from '@/types'
 import { api } from './api'
 import { fileDownloadManager } from './file-download-manager'
 import { storage } from './storage'
@@ -189,8 +189,10 @@ export class BatchTaskManager {
     item.processedAt = new Date().toISOString()
     this.emitTaskUpdate(taskId)
 
+    const startedAtMs = Date.now()
     try {
       const result = await this.executeTaskItem(item, task.config)
+      const durationMs = Date.now() - startedAtMs
 
       // 创建结果记录
       const taskResult: TaskResult = {
@@ -198,7 +200,8 @@ export class BatchTaskManager {
         taskItemId: item.id,
         imageUrl: result.imageUrl,
         downloaded: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        durationMs
       }
 
       task.results.push(taskResult)
@@ -260,32 +263,101 @@ export class BatchTaskManager {
       mask: item.mask
     }
 
-    // 根据模型类型调用不同的API
-    if (config.modelType === 'dalle') {
-      if (item.sourceImage) {
-        const response = await api.editDalleImage(request)
-        return { imageUrl: response.data[0]?.url || response.data[0]?.b64_json }
+    // 记录请求日志
+    const requestLog: DebugLog = {
+      id: uuidv4(),
+      taskItemId: item.id,
+      timestamp: new Date().toISOString(),
+      type: 'request',
+      data: request
+    }
+    
+    if (!item.debugLogs) {
+      item.debugLogs = []
+    }
+    item.debugLogs.push(requestLog)
+
+      let response: any
+    let startTime = Date.now()
+    
+    try {
+      // 根据模型类型调用不同的API
+      if (config.modelType === 'dalle') {
+        if (item.sourceImage) {
+          response = await api.editDalleImage(request)
+        } else {
+          response = await api.generateDalleImage(request)
+        }
+      } else if (config.modelType === 'gemini') {
+        if (item.sourceImage) {
+          response = await api.editGeminiImage(request)
+        } else {
+          response = await api.generateGeminiImage(request)
+        }
       } else {
-        const response = await api.generateDalleImage(request)
-        return { imageUrl: response.data[0]?.url || response.data[0]?.b64_json }
-      }
-    } else if (config.modelType === 'gemini') {
-      if (item.sourceImage) {
-        const response = await api.editGeminiImage(request)
-        return { imageUrl: `data:image/png;base64,${response.data[0]?.b64_json}` }
-      } else {
-        const response = await api.generateGeminiImage(request)
-        return { imageUrl: `data:image/png;base64,${response.data[0]?.b64_json}` }
-      }
-    } else {
-      // OpenAI 流式API
-      return new Promise((resolve, reject) => {
-        api.generateStreamImage(request, {
-          onMessage: () => {},
-          onComplete: (imageUrl: string) => resolve({ imageUrl }),
-          onError: (error: string) => reject(new Error(error))
+        // OpenAI 流式API
+        return new Promise((resolve, reject) => {
+          api.generateStreamImage(request, {
+            onMessage: () => {},
+            onComplete: (imageUrl: string) => {
+              // 记录响应日志
+              const responseLog: DebugLog = {
+                id: uuidv4(),
+                taskItemId: item.id,
+                timestamp: new Date().toISOString(),
+                type: 'response',
+                data: { imageUrl },
+                duration: Date.now() - startTime
+              }
+              item.debugLogs?.push(responseLog)
+              resolve({ imageUrl })
+            },
+            onError: (error: string) => {
+              // 记录错误日志
+              const errorLog: DebugLog = {
+                id: uuidv4(),
+                taskItemId: item.id,
+                timestamp: new Date().toISOString(),
+                type: 'error',
+                data: { error },
+                duration: Date.now() - startTime
+              }
+              item.debugLogs?.push(errorLog)
+              reject(new Error(error))
+            }
+          })
         })
-      })
+      }
+      
+      // 记录响应日志
+      const responseLog: DebugLog = {
+        id: uuidv4(),
+        taskItemId: item.id,
+        timestamp: new Date().toISOString(),
+        type: 'response',
+        data: response,
+        duration: Date.now() - startTime
+      }
+      item.debugLogs?.push(responseLog)
+      
+      if (config.modelType === 'dalle') {
+        return { imageUrl: (response.data[0]?.url || response.data[0]?.b64_json || '') as string }
+      } else {
+        return { imageUrl: `data:image/png;base64,${response.data[0]?.b64_json}` }
+      }
+      
+    } catch (error) {
+      // 记录错误日志
+      const errorLog: DebugLog = {
+        id: uuidv4(),
+        taskItemId: item.id,
+        timestamp: new Date().toISOString(),
+        type: 'error',
+        data: { error: error instanceof Error ? error.message : String(error) },
+        duration: Date.now() - startTime
+      }
+      item.debugLogs?.push(errorLog)
+      throw error
     }
   }
 
@@ -335,6 +407,30 @@ export class BatchTaskManager {
   // 设置最大并发数
   setMaxConcurrency(concurrency: number): void {
     this.maxConcurrency = Math.max(1, concurrency)
+  }
+
+  // 重试失败的任务项
+  retryFailedItems(taskId: string): void {
+    const task = this.tasks.get(taskId)
+    if (!task) return
+
+    let resetCount = 0
+    task.items.forEach(item => {
+      if (item.status === BatchTaskStatus.FAILED) {
+        item.status = BatchTaskStatus.PENDING
+        item.error = undefined
+        item.attemptCount = 0
+        resetCount++
+      }
+    })
+
+    if (resetCount > 0) {
+      task.status = BatchTaskStatus.PENDING
+      task.progress = Math.round(((task.completedItems + task.failedItems) / task.totalItems) * 100)
+      this.emitTaskUpdate(taskId)
+      // 重新开始任务
+      this.startTask(taskId)
+    }
   }
 
   // 获取统计信息

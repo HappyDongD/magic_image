@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronLeft, ChevronRight, Maximize2, Github, Globe, Layers } from "lucide-react"
+import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronLeft, ChevronRight, Maximize2, Github, Globe, Layers, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import Image from "next/image"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
 import { HistoryDialog } from "@/components/history-dialog"
@@ -65,6 +65,9 @@ function HomeContent() {
   // 批量任务相关状态
   const [batchTasks, setBatchTasks] = useState<BatchTask[]>([])
   const [activeTab, setActiveTab] = useState("single")
+  
+  // 下载状态管理
+  const [downloadStatus, setDownloadStatus] = useState<Record<string, 'idle' | 'downloading' | 'success' | 'error'>>({})
 
   useEffect(() => {
     const url = searchParams.get('url')
@@ -454,22 +457,39 @@ function HomeContent() {
     }
   }
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (generatedImages[currentImageIndex]) {
       const imageUrl = generatedImages[currentImageIndex];
-      const link = document.createElement('a');
-      link.href = imageUrl;
+      
+      // 设置下载状态
+      setDownloadStatus(prev => ({ ...prev, [imageUrl]: 'downloading' }));
+      
+      try {
+        const link = document.createElement('a');
+        link.href = imageUrl;
 
-      // 为base64图片设置合适的文件名
-      if (isBase64Image(imageUrl)) {
-        link.download = `generated-image-${Date.now()}.png`;
-      } else {
-        link.download = 'generated-image.png';
+        // 为base64图片设置合适的文件名
+        if (isBase64Image(imageUrl)) {
+          link.download = `generated-image-${Date.now()}.png`;
+        } else {
+          link.download = 'generated-image.png';
+        }
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // 设置下载成功状态
+        setDownloadStatus(prev => ({ ...prev, [imageUrl]: 'success' }));
+        
+        // 3秒后重置状态
+        setTimeout(() => {
+          setDownloadStatus(prev => ({ ...prev, [imageUrl]: 'idle' }));
+        }, 3000);
+      } catch (error) {
+        console.error('下载失败:', error);
+        setDownloadStatus(prev => ({ ...prev, [imageUrl]: 'error' }));
       }
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     }
   };
 
@@ -477,6 +497,15 @@ function HomeContent() {
   const handleTaskCreated = (task: BatchTask) => {
     setBatchTasks(prev => [task, ...prev])
     setActiveTab("batch")
+
+    // 立即注册该任务的更新监听，确保实时渲染
+    const cleanup = batchTaskManager.onTaskUpdate(task.id, (updatedTask) => {
+      setBatchTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t))
+      storage.saveBatchTask(updatedTask)
+    })
+    // 可选：在组件卸载时自动清理，这里简单挂在 window 以避免过度复杂
+    ;(window as any).__batch_update_listeners__ = (window as any).__batch_update_listeners__ || []
+    ;(window as any).__batch_update_listeners__.push(cleanup)
   }
 
   const handleTaskUpdate = (taskId: string, updates: Partial<BatchTask>) => {
@@ -917,7 +946,40 @@ function HomeContent() {
                         alt={prompt}
                         fill
                         className="object-contain rounded-lg"
+                        onError={(e) => {
+                          console.error('Failed to load image:', generatedImages[currentImageIndex]);
+                          const img = e.target as HTMLImageElement;
+                          img.style.display = 'none';
+                          const parent = img.parentElement;
+                          if (parent) {
+                            const fallback = document.createElement('div');
+                            fallback.className = 'w-full h-full bg-gray-200 flex items-center justify-center text-gray-400';
+                            fallback.innerHTML = `
+                              <div class="text-center">
+                                <div class="text-4xl mb-2">🖼️</div>
+                                <div>图片加载失败</div>
+                                <div class="text-sm mt-1">请检查网络连接或刷新页面</div>
+                              </div>
+                            `;
+                            parent.appendChild(fallback);
+                          }
+                        }}
                       />
+                      
+                      {/* 下载状态指示器 */}
+                      {downloadStatus[generatedImages[currentImageIndex]] && (
+                        <div className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-full backdrop-blur-sm shadow-lg">
+                          {downloadStatus[generatedImages[currentImageIndex]] === 'downloading' && (
+                            <Loader2 className="h-5 w-5 text-yellow-500 animate-spin" />
+                          )}
+                          {downloadStatus[generatedImages[currentImageIndex]] === 'success' && (
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                          )}
+                          {downloadStatus[generatedImages[currentImageIndex]] === 'error' && (
+                            <AlertCircle className="h-5 w-5 text-red-500" />
+                          )}
+                        </div>
+                      )}
                       {generatedImages.length > 1 && (
                         <>
                           <Button
