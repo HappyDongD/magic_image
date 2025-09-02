@@ -4,14 +4,19 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronLeft, ChevronRight, Maximize2, Github, Globe } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronLeft, ChevronRight, Maximize2, Github, Globe, Layers } from "lucide-react"
 import Image from "next/image"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
 import { HistoryDialog } from "@/components/history-dialog"
+import { BatchTaskList } from "@/components/batch-task-list"
+import { BatchTaskCreator } from "@/components/batch-task-creator"
+import { DownloadSettingsDialog } from "@/components/download-settings-dialog"
 import { useState, useRef, useEffect, Suspense } from "react"
 import { api } from "@/lib/api"
-import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType } from "@/types"
+import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType, BatchTask } from "@/types"
 import { storage } from "@/lib/storage"
+import { batchTaskManager } from "@/lib/batch-task-manager"
 import { v4 as uuidv4 } from 'uuid'
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { MaskEditor } from "@/components/mask-editor"
@@ -57,10 +62,14 @@ function HomeContent() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const searchParams = useSearchParams()
 
+  // 批量任务相关状态
+  const [batchTasks, setBatchTasks] = useState<BatchTask[]>([])
+  const [activeTab, setActiveTab] = useState("single")
+
   useEffect(() => {
     const url = searchParams.get('url')
     const apiKey = searchParams.get('apikey')
-    
+
     if (url && apiKey) {
       // 解码 URL 参数
       const decodedUrl = decodeURIComponent(url)
@@ -74,6 +83,22 @@ function HomeContent() {
       const secureUrl = storedConfig.baseUrl.replace('http:', 'https:')
       storage.setApiConfig(storedConfig.key, secureUrl)
       console.log('API URL已自动升级到HTTPS:', secureUrl)
+    }
+
+    // 加载批量任务
+    const savedTasks = storage.getBatchTasks()
+    setBatchTasks(savedTasks)
+
+    // 监听批量任务更新
+    const cleanup = savedTasks.map(task =>
+      batchTaskManager.onTaskUpdate(task.id, (updatedTask) => {
+        setBatchTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t))
+        storage.saveBatchTask(updatedTask)
+      })
+    )
+
+    return () => {
+      cleanup.forEach(clean => clean())
     }
   }, [searchParams])
 
@@ -434,19 +459,49 @@ function HomeContent() {
       const imageUrl = generatedImages[currentImageIndex];
       const link = document.createElement('a');
       link.href = imageUrl;
-      
+
       // 为base64图片设置合适的文件名
       if (isBase64Image(imageUrl)) {
         link.download = `generated-image-${Date.now()}.png`;
       } else {
         link.download = 'generated-image.png';
       }
-      
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     }
   };
+
+  // 批量任务处理函数
+  const handleTaskCreated = (task: BatchTask) => {
+    setBatchTasks(prev => [task, ...prev])
+    setActiveTab("batch")
+  }
+
+  const handleTaskUpdate = (taskId: string, updates: Partial<BatchTask>) => {
+    setBatchTasks(prev => prev.map(task =>
+      task.id === taskId ? { ...task, ...updates } : task
+    ))
+  }
+
+  const handleTaskDelete = (taskId: string) => {
+    setBatchTasks(prev => prev.filter(task => task.id !== taskId))
+    storage.removeBatchTask(taskId)
+  }
+
+  const [editingTask, setEditingTask] = useState<BatchTask | null>(null)
+
+  const handleTaskEdit = (task: BatchTask) => {
+    setEditingTask(task)
+  }
+
+  const handleTaskUpdated = (updatedTask: BatchTask) => {
+    setBatchTasks(prev => prev.map(task =>
+      task.id === updatedTask.id ? updatedTask : task
+    ))
+    setEditingTask(null)
+  }
 
   return (
     <main className="min-h-screen bg-background">
@@ -482,9 +537,22 @@ function HomeContent() {
       </div>
 
       <div className="container mx-auto px-4 pb-8 max-w-[1200px]">
-        <div className="grid grid-cols-[300px_1fr] gap-6">
-          {/* 左侧控制面板 */}
-          <div className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="single" className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              单图片生成
+            </TabsTrigger>
+            <TabsTrigger value="batch" className="flex items-center gap-2">
+              <Layers className="h-4 w-4" />
+              批量任务
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="single">
+            <div className="grid grid-cols-[300px_1fr] gap-6">
+              {/* 左侧控制面板 */}
+              <div className="space-y-6">
             <Card className="sticky top-4">
               <CardContent className="p-4 space-y-4">
                 <div className="flex items-center gap-4">
@@ -880,6 +948,41 @@ function HomeContent() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+          <TabsContent value="batch">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">批量任务管理</h2>
+                  <p className="text-gray-500 mt-1">创建和管理批量图片生成任务</p>
+                </div>
+                <div className="flex gap-3">
+                  <DownloadSettingsDialog>
+                    <Button variant="outline" className="px-6">
+                      <Settings className="h-4 w-4 mr-2" />
+                      下载设置
+                    </Button>
+                  </DownloadSettingsDialog>
+                  <BatchTaskCreator 
+                    onTaskCreated={handleTaskCreated} 
+                    currentModel={model}
+                    currentModelType={modelType}
+                    editingTask={editingTask}
+                    onTaskUpdated={handleTaskUpdated}
+                  />
+                </div>
+              </div>
+
+              <BatchTaskList
+                tasks={batchTasks}
+                onTaskUpdate={handleTaskUpdate}
+                onTaskDelete={handleTaskDelete}
+                onTaskEdit={handleTaskEdit}
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <ApiKeyDialog 

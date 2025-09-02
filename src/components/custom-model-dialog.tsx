@@ -100,7 +100,7 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="max-w-[98vw] max-h-[95vh] w-[98vw] sm:max-w-[800px]">
         <DialogHeader>
           <DialogTitle>自定义模型管理</DialogTitle>
         </DialogHeader>

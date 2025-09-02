@@ -51,4 +51,104 @@ export interface GenerateImageRequest {
   n?: number
   quality?: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard'
   mask?: string
+}
+
+// 批量任务相关类型
+export enum BatchTaskStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled'
+}
+
+export enum TaskType {
+  TEXT_TO_IMAGE = 'text_to_image',
+  IMAGE_TO_IMAGE = 'image_to_image',
+  MIXED = 'mixed'
+}
+
+export interface BatchTask {
+  id: string
+  name: string
+  type: TaskType
+  status: BatchTaskStatus
+  progress: number
+  totalItems: number
+  completedItems: number
+  failedItems: number
+  createdAt: string
+  startedAt?: string
+  completedAt?: string
+  config: BatchTaskConfig
+  items: TaskItem[]
+  results: TaskResult[]
+  error?: string
+}
+
+export interface BatchTaskConfig {
+  model: GenerationModel
+  modelType: ModelType
+  concurrentLimit: number
+  retryAttempts: number
+  retryDelay: number
+  autoDownload: boolean
+  downloadPath?: string
+  aspectRatio: AspectRatio
+  size: ImageSize
+  quality: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard'
+  generateCount?: number // 新增：每个提示词的生成次数
+}
+
+export interface TaskItem {
+  id: string
+  prompt: string
+  sourceImage?: string
+  mask?: string
+  priority: number
+  status: BatchTaskStatus
+  attemptCount: number
+  createdAt: string
+  processedAt?: string
+  error?: string
+}
+
+export interface TaskResult {
+  id: string
+  taskItemId: string
+  imageUrl: string
+  localPath?: string
+  downloaded: boolean
+  createdAt: string
+}
+
+export interface BatchQueue {
+  id: string
+  name: string
+  tasks: BatchTask[]
+  maxConcurrency: number
+  isActive: boolean
+  createdAt: string
+}
+
+export interface ModelConfig {
+  id: string
+  name: string
+  model: GenerationModel
+  modelType: ModelType
+  apiKey: string
+  baseUrl: string
+  rateLimit?: number
+  timeout?: number
+  enabled: boolean
+  createdAt: string
+  lastUsed?: string
+}
+
+export interface DownloadConfig {
+  autoDownload: boolean
+  defaultPath: string
+  organizeByDate: boolean
+  organizeByTask: boolean
+  filenameTemplate: string
 } 
