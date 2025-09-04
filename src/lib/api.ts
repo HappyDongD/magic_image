@@ -454,59 +454,80 @@ export const api = {
     const timeoutMs = request.timeoutMs ?? 120000
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
-    const response = await fetch(requestUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.key}`
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal
-    })
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json()
-        const errorMessage = errorData.message || errorData.error?.message || '生成图片失败'
-        const errorCode = errorData.code || errorData.error?.code
-        const fullError = `${errorMessage}${errorCode ? `\n错误代码: ${errorCode}` : ''}`
-        callbacks.onError(fullError)
-        showErrorToast(fullError)
-      } catch {
-        const error = '生成图片失败'
-        callbacks.onError(error)
-        showErrorToast(error)
-      }
-      return
-    }
-
-    const reader = response.body?.getReader()
-    if (!reader) {
-      callbacks.onError('读取响应失败')
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-
     try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.key}`
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      })
 
-        buffer += decoder.decode(value, { stream: true })
+      if (!response.ok) {
+        try {
+          const errorData = await response.json()
+          const errorMessage = errorData.message || errorData.error?.message || '生成图片失败'
+          const errorCode = errorData.code || errorData.error?.code
+          const fullError = `${errorMessage}${errorCode ? `\n错误代码: ${errorCode}` : ''}`
+          callbacks.onError(fullError)
+          showErrorToast(fullError)
+        } catch {
+          const error = '生成图片失败'
+          callbacks.onError(error)
+          showErrorToast(error)
+        }
+        return
+      }
 
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
+      const reader = response.body?.getReader()
+      if (!reader) {
+        callbacks.onError('读取响应失败')
+        return
+      }
 
-        for (const line of lines) {
-          const trimmedLine = line.trim()
-          if (!trimmedLine || trimmedLine === 'data: [DONE]') continue
+      const decoder = new TextDecoder()
+      let buffer = ''
 
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            const trimmedLine = line.trim()
+            if (!trimmedLine || trimmedLine === 'data: [DONE]') continue
+
+            try {
+              const jsonStr = trimmedLine.replace(/^data: /, '')
+              const data = JSON.parse(jsonStr)
+
+              if (data.choices?.[0]?.delta?.content) {
+                const content = data.choices[0].delta.content
+                callbacks.onMessage(content)
+
+                const urlMatch = content.match(/\[.*?\]\((.*?)\)/)
+                if (urlMatch && urlMatch[1]) {
+                  callbacks.onComplete(urlMatch[1])
+                  return
+                }
+              }
+            } catch (e) {
+              console.warn('解析数据行失败:', e)
+            }
+          }
+        }
+
+        if (buffer.trim()) {
           try {
-            const jsonStr = trimmedLine.replace(/^data: /, '')
+            const jsonStr = buffer.trim().replace(/^data: /, '')
             const data = JSON.parse(jsonStr)
-
             if (data.choices?.[0]?.delta?.content) {
               const content = data.choices[0].delta.content
               callbacks.onMessage(content)
@@ -514,42 +535,31 @@ export const api = {
               const urlMatch = content.match(/\[.*?\]\((.*?)\)/)
               if (urlMatch && urlMatch[1]) {
                 callbacks.onComplete(urlMatch[1])
-                return
               }
             }
           } catch (e) {
-            console.warn('解析数据行失败:', e)
+            console.warn('解析最后的数据失败:', e)
           }
         }
-      }
-
-      if (buffer.trim()) {
-        try {
-          const jsonStr = buffer.trim().replace(/^data: /, '')
-          const data = JSON.parse(jsonStr)
-          if (data.choices?.[0]?.delta?.content) {
-            const content = data.choices[0].delta.content
-            callbacks.onMessage(content)
-
-            const urlMatch = content.match(/\[.*?\]\((.*?)\)/)
-            if (urlMatch && urlMatch[1]) {
-              callbacks.onComplete(urlMatch[1])
-            }
-          }
-        } catch (e) {
-          console.warn('解析最后的数据失败:', e)
+      } catch (error) {
+        if ((error as any)?.name === 'AbortError') {
+          callbacks.onError('请求超时')
+        } else {
+          console.error('处理流数据失败:', error)
+          callbacks.onError('处理响应数据失败')
         }
+      } finally {
+        reader.releaseLock()
       }
     } catch (error) {
       if ((error as any)?.name === 'AbortError') {
         callbacks.onError('请求超时')
       } else {
-        console.error('处理流数据失败:', error)
-        callbacks.onError('处理响应数据失败')
+        console.error('请求失败:', error)
+        callbacks.onError('请求失败')
       }
     } finally {
       clearTimeout(timeoutId)
-      reader.releaseLock()
     }
   }
 } 
