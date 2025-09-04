@@ -27,9 +27,13 @@ export class ActivationService {
     }
 
     try {
-      // 使用Rust后端获取机器码
-      const { invoke } = await import('@tauri-apps/api/tauri')
-      this.machineCode = await invoke('get_machine_id')
+      // 使用Rust后端获取机器码（Tauri v2 core）
+      // 动态导入，避免非 Tauri 环境构建时报错
+      const mod = await import('@tauri-apps/api/core')
+      const invoke = (mod as any).invoke as (cmd: string, args?: any) => Promise<any>
+      if (typeof invoke === 'function') {
+        this.machineCode = await invoke('get_machine_id')
+      }
       return this.machineCode
     } catch (error) {
       console.error('从Rust获取机器码失败:', error)
