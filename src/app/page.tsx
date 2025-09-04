@@ -74,19 +74,26 @@ function HomeContent() {
     const url = searchParams.get('url')
     const apiKey = searchParams.get('apikey')
 
-    // 拦截任何来自 URL 的 baseUrl 尝试，始终固定为目标地址
-    if (apiKey) {
-      const decodedApiKey = decodeURIComponent(apiKey)
-      storage.setApiConfig(decodedApiKey, 'https://zx1.deepwl.net')
-    }
+    try {
+      const activated = storage.isActivated()
 
-    // 启动时确保存储中的地址为固定地址
-    const storedConfig = storage.getApiConfig()
-    if (storedConfig) {
-      if (storedConfig.baseUrl !== 'https://zx1.deepwl.net') {
-        storage.setApiConfig(storedConfig.key, 'https://zx1.deepwl.net')
-        console.log('API 基础地址已强制设为固定值: https://zx1.deepwl.net')
+      // 仅在已激活时才写入配置，避免未激活抛错导致客户端异常
+      if (apiKey && activated) {
+        const decodedApiKey = decodeURIComponent(apiKey)
+        storage.setApiConfig(decodedApiKey, 'https://zx1.deepwl.net')
       }
+
+      // 启动时确保存储中的地址为固定地址（仅在已激活时执行）
+      if (activated) {
+        const storedConfig = storage.getApiConfig()
+        if (storedConfig && storedConfig.baseUrl !== 'https://zx1.deepwl.net') {
+          storage.setApiConfig(storedConfig.key, 'https://zx1.deepwl.net')
+          console.log('API 基础地址已强制设为固定值: https://zx1.deepwl.net')
+        }
+      }
+    } catch (e) {
+      // 兜底：任何异常都不应中断页面加载
+      console.warn('初始化API配置时跳过写入：', e)
     }
 
     // 加载批量任务
