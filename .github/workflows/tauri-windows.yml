@@ -2,6 +2,8 @@ name: build-windows-exe
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ "feature/image-gen" ]
 
 jobs:
   build:
