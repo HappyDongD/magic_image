@@ -96,41 +96,41 @@ export function DownloadSettingsDialog({ children }: DownloadSettingsDialogProps
 
         <div className="flex flex-col max-h-[calc(78vh-6rem)] pb-2">
           <ScrollArea className="flex-1 max-h-full pr-4">
-            <div className="space-y-6">
-              {/* 基本设置和文件组织 - 并排显示 */}
-              <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
-                {/* 基本设置 */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">基本设置</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div className="space-y-1">
-                        <Label htmlFor="autoDownload" className="text-base font-medium">自动下载</Label>
-                        <p className="text-sm text-gray-600">批量任务完成后自动下载生成的所有图片</p>
-                      </div>
-                      <Switch
-                        id="autoDownload"
-                        checked={config.autoDownload}
-                        onCheckedChange={(checked) => setConfig(prev => ({ ...prev, autoDownload: checked }))}
-                      />
-                    </div>
+        <div className="space-y-6">
+          {/* 基本设置和文件组织 - 并排显示 */}
+          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+            {/* 基本设置 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">基本设置</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div className="space-y-1">
+                    <Label htmlFor="autoDownload" className="text-base font-medium">自动下载</Label>
+                    <p className="text-sm text-gray-600">批量任务完成后自动下载生成的所有图片</p>
+                  </div>
+                  <Switch
+                    id="autoDownload"
+                    checked={config.autoDownload}
+                    onCheckedChange={(checked) => setConfig(prev => ({ ...prev, autoDownload: checked }))}
+                  />
+                </div>
 
-                    <div className="space-y-3">
-                      <Label htmlFor="defaultPath" className="text-base font-medium">默认下载路径</Label>
+                <div className="space-y-3">
+                  <Label htmlFor="defaultPath" className="text-base font-medium">默认下载路径</Label>
                       <div className="flex gap-2 items-center">
-                        <Input
-                          id="defaultPath"
+                  <Input
+                    id="defaultPath"
                           placeholder="请选择下载目录（桌面端优先，浏览器将使用默认下载目录）"
-                          value={config.defaultPath}
+                    value={config.defaultPath}
                           onChange={(e) => {
                             const v = e.target.value
                             setConfig(prev => ({ ...prev, defaultPath: v }))
                             storage.saveDownloadConfig({ ...storage.getDownloadConfig(), defaultPath: v })
                           }}
                           className="h-10 flex-1"
-                        />
+                  />
                         <Button
                           variant="outline"
                           onClick={async () => {
@@ -173,182 +173,182 @@ export function DownloadSettingsDialog({ children }: DownloadSettingsDialogProps
                             }
                           }}
                         />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                {/* 文件组织 */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">文件组织</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                      <div className="space-y-1">
-                        <Label htmlFor="organizeByDate" className="text-base font-medium">按日期组织</Label>
-                        <p className="text-sm text-gray-600">将文件按生成日期组织到子文件夹中</p>
-                      </div>
-                      <Switch
-                        id="organizeByDate"
-                        checked={config.organizeByDate}
-                        onCheckedChange={(checked) => setConfig(prev => ({ ...prev, organizeByDate: checked }))}
-                      />
-                    </div>
+            {/* 文件组织 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">文件组织</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+                  <div className="space-y-1">
+                    <Label htmlFor="organizeByDate" className="text-base font-medium">按日期组织</Label>
+                    <p className="text-sm text-gray-600">将文件按生成日期组织到子文件夹中</p>
+                  </div>
+                  <Switch
+                    id="organizeByDate"
+                    checked={config.organizeByDate}
+                    onCheckedChange={(checked) => setConfig(prev => ({ ...prev, organizeByDate: checked }))}
+                  />
+                </div>
 
-                    <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                      <div className="space-y-1">
-                        <Label htmlFor="organizeByTask" className="text-base font-medium">按任务组织</Label>
-                        <p className="text-sm text-gray-600">将文件按批量任务名称组织到子文件夹中</p>
-                      </div>
-                      <Switch
-                        id="organizeByTask"
-                        checked={config.organizeByTask}
-                        onCheckedChange={(checked) => setConfig(prev => ({ ...prev, organizeByTask: checked }))}
-                      />
+                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                  <div className="space-y-1">
+                    <Label htmlFor="organizeByTask" className="text-base font-medium">按任务组织</Label>
+                    <p className="text-sm text-gray-600">将文件按批量任务名称组织到子文件夹中</p>
+                  </div>
+                  <Switch
+                    id="organizeByTask"
+                    checked={config.organizeByTask}
+                    onCheckedChange={(checked) => setConfig(prev => ({ ...prev, organizeByTask: checked }))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 文件命名 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">文件命名</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <Label htmlFor="filenameTemplate" className="text-base font-medium">文件名模板</Label>
+                <Input
+                  id="filenameTemplate"
+                  value={config.filenameTemplate}
+                  onChange={(e) => setConfig(prev => ({ ...prev, filenameTemplate: e.target.value }))}
+                  className="h-10"
+                />
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-700 mb-3 font-medium">可用变量：</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="flex items-center gap-2">
+                      <code className="bg-white px-2 py-1 rounded border text-sm">{'{task}'}</code>
+                      <span className="text-sm text-gray-600">任务名称</span>
                     </div>
-                  </CardContent>
-                </Card>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-white px-2 py-1 rounded border text-sm">{'{index}'}</code>
+                      <span className="text-sm text-gray-600">文件索引</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-white px-2 py-1 rounded border text-sm">{'{timestamp}'}</code>
+                      <span className="text-sm text-gray-600">时间戳</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-white px-2 py-1 rounded border text-sm">{'{date}'}</code>
+                      <span className="text-sm text-gray-600">日期</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-white px-2 py-1 rounded border text-sm">{'{taskId}'}</code>
+                      <span className="text-sm text-gray-600">任务ID</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* 文件命名 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">文件命名</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-3">
-                    <Label htmlFor="filenameTemplate" className="text-base font-medium">文件名模板</Label>
-                    <Input
-                      id="filenameTemplate"
-                      value={config.filenameTemplate}
-                      onChange={(e) => setConfig(prev => ({ ...prev, filenameTemplate: e.target.value }))}
-                      className="h-10"
-                    />
-                    <div className="p-4 bg-gray-50 rounded-lg">
-                      <p className="text-sm text-gray-700 mb-3 font-medium">可用变量：</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <div className="flex items-center gap-2">
-                          <code className="bg-white px-2 py-1 rounded border text-sm">{'{task}'}</code>
-                          <span className="text-sm text-gray-600">任务名称</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-white px-2 py-1 rounded border text-sm">{'{index}'}</code>
-                          <span className="text-sm text-gray-600">文件索引</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-white px-2 py-1 rounded border text-sm">{'{timestamp}'}</code>
-                          <span className="text-sm text-gray-600">时间戳</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-white px-2 py-1 rounded border text-sm">{'{date}'}</code>
-                          <span className="text-sm text-gray-600">日期</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-white px-2 py-1 rounded border text-sm">{'{taskId}'}</code>
-                          <span className="text-sm text-gray-600">任务ID</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+              <div className="space-y-3">
+                <Label className="text-base font-medium">预览示例</Label>
+                <div className="bg-gray-100 p-4 rounded-lg text-sm font-mono border">
+                  {config.filenameTemplate
+                    .replace('{task}', 'my_batch_task')
+                    .replace('{index}', '001')
+                    .replace('{timestamp}', new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5))
+                    .replace('{date}', new Date().toISOString().split('T')[0])
+                    .replace('{taskId}', 'abc123')
+                  }.png
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                  <div className="space-y-3">
-                    <Label className="text-base font-medium">预览示例</Label>
-                    <div className="bg-gray-100 p-4 rounded-lg text-sm font-mono border">
-                      {config.filenameTemplate
-                        .replace('{task}', 'my_batch_task')
-                        .replace('{index}', '001')
-                        .replace('{timestamp}', new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5))
-                        .replace('{date}', new Date().toISOString().split('T')[0])
-                        .replace('{taskId}', 'abc123')
-                      }.png
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 快速模板 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">快速模板</CardTitle>
-                </CardHeader>
-                <CardContent>
+          {/* 快速模板 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">快速模板</CardTitle>
+            </CardHeader>
+            <CardContent>
                   <div className="max-h-48 overflow-y-auto border rounded-lg p-2">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{index}' }))}
-                      >
-                        简单格式
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{timestamp}' }))}
-                      >
-                        时间戳格式
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{date}/{task}_{index}' }))}
-                      >
-                        日期分组
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{taskId}_{index}_{timestamp}' }))}
-                      >
-                        完整信息
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{date}_{index}' }))}
-                      >
-                        任务日期
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{index}_{timestamp}' }))}
-                      >
-                        索引时间戳
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{taskId}_{index}' }))}
-                      >
-                        任务ID格式
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{date}_{task}_{index}_{timestamp}' }))}
-                      >
-                        完整格式
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{index}' }))}
+                  >
+                    简单格式
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{timestamp}' }))}
+                  >
+                    时间戳格式
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{date}/{task}_{index}' }))}
+                  >
+                    日期分组
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{taskId}_{index}_{timestamp}' }))}
+                  >
+                    完整信息
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{date}_{index}' }))}
+                  >
+                    任务日期
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{index}_{timestamp}' }))}
+                  >
+                    索引时间戳
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{task}_{taskId}_{index}' }))}
+                  >
+                    任务ID格式
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfig(prev => ({ ...prev, filenameTemplate: '{date}_{task}_{index}_{timestamp}' }))}
+                  >
+                    完整格式
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
           </ScrollArea>
 
           <div className="flex justify-between items-center pt-4 pb-2 border-t mt-4">
-            <Button variant="outline" onClick={handleReset} className="px-6">
-              重置为默认
+          <Button variant="outline" onClick={handleReset} className="px-6">
+            重置为默认
+          </Button>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setIsOpen(false)} className="px-8">
+              取消
             </Button>
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setIsOpen(false)} className="px-8">
-                取消
-              </Button>
-              <Button onClick={handleSave} className="px-8">
-                保存设置
-              </Button>
+            <Button onClick={handleSave} className="px-8">
+              保存设置
+            </Button>
             </div>
           </div>
         </div>

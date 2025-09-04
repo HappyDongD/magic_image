@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronLeft, ChevronRight, Maximize2, Github, Globe, Layers, Loader2, CheckCircle, AlertCircle } from "lucide-react"
+import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronLeft, ChevronRight, Maximize2, Layers, Loader2, CheckCircle, AlertCircle, KeyRound } from "lucide-react"
 import Image from "next/image"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
 import { HistoryDialog } from "@/components/history-dialog"
@@ -26,6 +26,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { CustomModelDialog } from "@/components/custom-model-dialog"
 import { toast } from "sonner"
+import { DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 export default function Home() {
   return (
@@ -520,6 +521,40 @@ function HomeContent() {
   }
 
   const [editingTask, setEditingTask] = useState<BatchTask | null>(null)
+  const [showActivationDialog, setShowActivationDialog] = useState(false)
+  const [machineId, setMachineId] = useState<string>('')
+  const [licenseKey, setLicenseKey] = useState<string>('')
+  const [activating, setActivating] = useState<boolean>(false)
+
+  const ensureMachineId = async () => {
+    try {
+      const core = await import('@tauri-apps/api/core')
+      const id = await core.invoke<string>('get_machine_id')
+      setMachineId(id || '')
+    } catch {
+      // 回退：无 Tauri 环境时生成占位 ID（不用于校验，仅展示）
+      const id = (Math.random().toString(16).slice(2) + Date.now().toString(16)).slice(0,16)
+      setMachineId(id)
+    }
+  }
+
+  const handleOpenActivation = async () => {
+    await ensureMachineId()
+    const lic = storage.getLicenseInfo()
+    setLicenseKey(lic.licenseKey || '')
+    setShowActivationDialog(true)
+  }
+
+  const handleActivate = async () => {
+    try {
+      setActivating(true)
+      // 这里可接入后端校验；当前先本地记录
+      storage.saveLicenseInfo({ licenseKey, machineId, activated: !!licenseKey && !!machineId })
+      setShowActivationDialog(false)
+    } finally {
+      setActivating(false)
+    }
+  }
 
   const handleTaskEdit = (task: BatchTask) => {
     setEditingTask(task)
@@ -544,18 +579,10 @@ function HomeContent() {
           variant="ghost"
           size="sm"
           className="absolute right-4 top-1/2 -translate-y-1/2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full p-2"
-          onClick={() => window.open('https://github.com/HappyDongD/magic_image', '_blank')}
+          onClick={handleOpenActivation}
+          title="激活应用"
         >
-          <Github className="h-5 w-5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute right-14 top-1/2 -translate-y-1/2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full p-2"
-          onClick={() => window.open('https://mj.do', '_blank')}
-          title="访问 mj.do"
-        >
-          <Globe className="h-5 w-5" />
+          <KeyRound className="h-5 w-5" />
         </Button>
       </div>
 
@@ -1065,17 +1092,7 @@ function HomeContent() {
         onSelectModel={handleSelectCustomModel}
       />
 
-      <footer className="w-full py-4 text-center text-sm text-gray-500">
-        <a 
-          href="https://github.com/HappyDongD/magic_image" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="hover:text-primary transition-colors inline-flex items-center gap-2"
-        >
-          <Github className="h-4 w-4" />
-          访问 GitHub 项目主页
-        </a>
-      </footer>
+      {/* 移除外链 footer */}
 
       <Dialog open={showImageDialog} onOpenChange={setShowImageDialog}>
         <DialogContent className="max-w-4xl">
@@ -1086,6 +1103,34 @@ function HomeContent() {
               fill
               className="object-contain rounded-lg"
             />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 激活对话框 */}
+      <Dialog open={showActivationDialog} onOpenChange={setShowActivationDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>应用激活</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-xs text-gray-500">机器码</div>
+            <div className="px-3 py-2 bg-gray-50 rounded border text-sm break-all select-all">{machineId || '获取中...'}</div>
+            <div className="space-y-1">
+              <div className="text-xs text-gray-500">激活码</div>
+              <input
+                className="w-full h-9 px-3 border rounded"
+                placeholder="请输入激活码"
+                value={licenseKey}
+                onChange={(e) => setLicenseKey(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowActivationDialog(false)}>取消</Button>
+            <Button size="sm" onClick={handleActivate} disabled={activating || !licenseKey}>
+              {activating ? '激活中...' : '立即激活'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

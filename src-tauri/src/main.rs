@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::Emitter;
+use sysinfo::System;
+use sha2::{Digest, Sha256};
 
 #[tauri::command]
 fn read_local_file(path: String) -> Result<String, String> {
@@ -14,15 +16,20 @@ fn read_local_file(path: String) -> Result<String, String> {
     use std::io::Read;
     use base64::{Engine as _, engine::general_purpose};
     
-    let mut file = File::open(&path)
-        .map_err(|e| format!("无法打开文件: {}", e))?;
+    // 直接使用前端传递的路径，不进行额外的路径转换
+    let file_path = PathBuf::from(&path);
+    
+    println!("尝试读取文件: {:?}", file_path);
+    
+    let mut file = File::open(&file_path)
+        .map_err(|e| format!("无法打开文件: {} (路径: {:?})", e, file_path))?;
     
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)
         .map_err(|e| format!("读取文件失败: {}", e))?;
     
     // 检查文件类型
-    let mime_type = match path.to_lowercase().as_str() {
+    let mime_type = match file_path.to_string_lossy().to_lowercase().as_str() {
         p if p.ends_with(".png") => "image/png",
         p if p.ends_with(".jpg") || p.ends_with(".jpeg") => "image/jpeg",
         p if p.ends_with(".gif") => "image/gif",
@@ -143,9 +150,30 @@ fn download_file(url: String, filename: String, dir: Option<String>, app_handle:
     Err(last_err.unwrap_or_else(|| "下载失败".to_string()))
 }
 
+#[tauri::command]
+fn get_machine_id() -> Result<String, String> {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    // 收集多维度硬件信息
+    let hostname = System::host_name().unwrap_or_default();
+    let os_version = System::long_os_version().unwrap_or_default();
+    let cpu_brand = sys.cpus().get(0).map(|c| c.brand().to_string()).unwrap_or_default();
+    let cpu_freq = sys.cpus().get(0).map(|c| c.frequency().to_string()).unwrap_or_default();
+    let total_mem = sys.total_memory().to_string();
+    // 为兼容性移除磁盘信息，避免不同平台 API 差异
+    let seed = format!("{}|{}|{}|{}|{}", hostname, os_version, cpu_brand, cpu_freq, total_mem);
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    let hash = hasher.finalize();
+    // 取前16个十六进制字符
+    let id = format!("{:x}", hash)[..16].to_string();
+    Ok(id)
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![read_local_file, get_download_dir, download_file])
+        .invoke_handler(tauri::generate_handler![read_local_file, get_download_dir, download_file, get_machine_id])
         .setup(|_app| {
             #[cfg(debug_assertions)]
             {

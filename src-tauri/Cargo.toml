@@ -25,3 +25,5 @@ tauri = { version = "2.5.0", features = [] }
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
 directories = "5"
 base64 = "0.22"
+sysinfo = "0.30"
+sha2 = "0.10"

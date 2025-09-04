@@ -53,6 +53,12 @@ export const api = {
       throw new Error('请先设置 API 配置')
     }
 
+    // 激活校验
+    if (!storage.isActivated()) {
+      showErrorToast('尚未激活，无法调用生成接口')
+      throw new Error('未激活')
+    }
+
     if (!config.key || !config.baseUrl) {
       showErrorToast("API 配置不完整，请检查 API Key 和基础地址")
       throw new Error('API 配置不完整')
@@ -98,6 +104,12 @@ export const api = {
     if (!config) {
       showErrorToast("请先设置 API 配置")
       throw new Error('请先设置 API 配置')
+    }
+
+    // 激活校验
+    if (!storage.isActivated()) {
+      showErrorToast('尚未激活，无法调用编辑接口')
+      throw new Error('未激活')
     }
 
     if (!config.key || !config.baseUrl) {
@@ -183,6 +195,12 @@ export const api = {
       throw new Error('请先设置 API 配置')
     }
 
+    // 激活校验
+    if (!storage.isActivated()) {
+      showErrorToast('尚未激活，无法调用生成接口')
+      throw new Error('未激活')
+    }
+
     if (!config.key || !config.baseUrl) {
       showErrorToast("API 配置不完整，请检查 API Key 和基础地址")
       throw new Error('API 配置不完整')
@@ -256,6 +274,12 @@ export const api = {
     if (!config) {
       showErrorToast("请先设置 API 配置")
       throw new Error('请先设置 API 配置')
+    }
+
+    // 激活校验
+    if (!storage.isActivated()) {
+      showErrorToast('尚未激活，无法调用编辑接口')
+      throw new Error('未激活')
     }
 
     if (!config.key || !config.baseUrl) {
@@ -364,6 +388,14 @@ export const api = {
       return
     }
 
+    // 激活校验
+    if (!storage.isActivated()) {
+      const error = '尚未激活，无法调用生成接口'
+      showErrorToast(error)
+      callbacks.onError(error)
+      return
+    }
+
     if (!config.key || !config.baseUrl) {
       const error = 'API 配置不完整，请检查 API Key 和基础地址'
       showErrorToast(error)
@@ -407,14 +439,15 @@ export const api = {
       : '/v1/chat/completions'
 
     // 根据模型类型构建不同的请求体
-    const requestBody = modelType === ModelType.DALLE 
+    const requestBody = modelType === ModelType.DALLE
       ? {
           model: request.model,
           prompt: request.prompt,
-          size: request.aspectRatio === '1:1' ? '1024x1024' : 
-                request.aspectRatio === '16:9' ? '1792x1024' : 
+          size: request.aspectRatio === '1:1' ? '1024x1024' :
+                request.aspectRatio === '16:9' ? '1792x1024' :
                 '1024x1792',
-          n: 1
+          n: 1,
+          quality: request.quality || 'standard'
         }
       : {
           model: request.model,

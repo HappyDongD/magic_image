@@ -1,6 +1,7 @@
 import { BatchTask, BatchTaskStatus, TaskItem, TaskResult, BatchTaskConfig, ModelConfig, TaskType, DebugLog } from '@/types'
 import { api } from './api'
 import { fileDownloadManager } from './file-download-manager'
+import { downloadService } from './download-service'
 import { storage } from './storage'
 import { v4 as uuidv4 } from 'uuid'
 import { toast } from 'sonner'
@@ -107,6 +108,8 @@ export class BatchTaskManager {
 
     this.tasks.delete(taskId)
     this.eventListeners.delete(taskId)
+    // 从存储中删除任务
+    storage.removeBatchTask(taskId)
   }
 
   // 获取任务
@@ -250,18 +253,18 @@ export class BatchTaskManager {
 
     console.log('开始执行任务项:', item.prompt, '模型:', config.model, '类型:', config.modelType)
 
-    const request = {
-      prompt: item.prompt,
-      model: config.model,
-      modelType: config.modelType,
-      sourceImage: item.sourceImage,
-      isImageToImage: !!item.sourceImage,
-      aspectRatio: config.aspectRatio,
-      size: config.size,
-      n: 1,
-      quality: config.quality,
-      mask: item.mask
-    }
+          const request = {
+        prompt: item.prompt,
+        model: config.model,
+        modelType: config.modelType,
+        sourceImage: item.sourceImage,
+        isImageToImage: !!item.sourceImage,
+        aspectRatio: config.aspectRatio,
+        size: config.size,
+        n: config.generateCount && config.generateCount > 0 ? config.generateCount : 1,
+        quality: config.quality,
+        mask: item.mask
+      }
 
     // 记录请求日志
     const requestLog: DebugLog = {
@@ -364,9 +367,19 @@ export class BatchTaskManager {
   // 私有方法：下载图片
   private async downloadImage(result: TaskResult, task: BatchTask): Promise<void> {
     try {
-      fileDownloadManager.addDownload(result, task.name)
-      result.downloaded = true
-      result.localPath = `batch_${task.name}_${result.id}.png`
+      // 使用统一的下载服务
+      const success = await downloadService.downloadImage(result.imageUrl, {
+        taskName: task.name,
+        showToast: false // 批量任务不显示单独的toast
+      })
+      
+      if (success) {
+        result.downloaded = true
+        // localPath 会在文件下载管理器下载完成后自动更新
+        // 这里不再硬编码本地路径，由下载服务处理
+      } else {
+        console.error('添加下载任务失败:', result.id)
+      }
     } catch (error) {
       console.error('添加下载任务失败:', error)
       toast.error(`添加下载任务失败: ${result.id}`)

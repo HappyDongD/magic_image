@@ -475,33 +475,70 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="aspectRatio">图片比例</Label>
-                      <Select value={aspectRatio} onValueChange={(value: AspectRatio) => setAspectRatio(value)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1:1">1:1 方形</SelectItem>
-                          <SelectItem value="16:9">16:9 宽屏</SelectItem>
-                          <SelectItem value="9:16">9:16 竖屏</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="size">图片尺寸</Label>
-                      <Select value={size} onValueChange={(value: ImageSize) => setSize(value)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1024x1024">1024x1024</SelectItem>
-                          <SelectItem value="1536x1024">1536x1024</SelectItem>
-                          <SelectItem value="1024x1536">1024x1536</SelectItem>
-                          <SelectItem value="1792x1024">1792x1024</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {/* 根据模型类型显示不同的参数 */}
+                    {(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE || model === 'gemini-2.5-flash-image-preview' || modelType === ModelType.GEMINI) ? (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="size">图片尺寸</Label>
+                          <Select value={size} onValueChange={(value: ImageSize) => setSize(value)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1024x1024">1024x1024</SelectItem>
+                              <SelectItem value="1536x1024">1536x1024</SelectItem>
+                              <SelectItem value="1024x1536">1024x1536</SelectItem>
+                              <SelectItem value="1792x1024">1792x1024</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {taskType === TaskType.IMAGE_TO_IMAGE && (
+                          <div className="space-y-2">
+                            <Label htmlFor="quality">图片质量</Label>
+                            <Select
+                              value={quality}
+                              onValueChange={(value: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard') => setQuality(value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="选择图片质量" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {model === 'dall-e-3' ? (
+                                  <>
+                                    <SelectItem value="hd">HD 高质量</SelectItem>
+                                    <SelectItem value="standard">标准质量</SelectItem>
+                                    <SelectItem value="auto">自动选择</SelectItem>
+                                  </>
+                                ) : model === 'gpt-image-1' ? (
+                                  <>
+                                    <SelectItem value="high">高质量</SelectItem>
+                                    <SelectItem value="medium">中等质量</SelectItem>
+                                    <SelectItem value="low">低质量</SelectItem>
+                                    <SelectItem value="auto">自动选择</SelectItem>
+                                  </>
+                                ) : (
+                                  <SelectItem value="auto">自动选择</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        <Label htmlFor="aspectRatio">图片比例</Label>
+                        <Select value={aspectRatio} onValueChange={(value: AspectRatio) => setAspectRatio(value)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1:1">1:1 方形</SelectItem>
+                            <SelectItem value="16:9">16:9 宽屏</SelectItem>
+                            <SelectItem value="9:16">9:16 竖屏</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

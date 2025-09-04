@@ -68,17 +68,17 @@ export class FileDownloadManager {
   }
 
   // 添加单个下载任务
-  addDownload(result: TaskResult, taskName?: string): void {
+  addDownload(result: TaskResult, taskName?: string): boolean {
     const config = storage.getDownloadConfig()
     const filename = this.generateFilename(result, config, taskName)
 
-    // 检查是否已经在下载队列中
-    const existingTask = this.downloadQueue.find(t => t.url === result.imageUrl) || 
+    // 检查是否已经在下载队列中或正在下载
+    const existingTask = this.downloadQueue.find(t => t.url === result.imageUrl) ||
                         Array.from(this.activeDownloads.values()).find(t => t.url === result.imageUrl)
     
     if (existingTask) {
       console.log('Download task already exists:', result.imageUrl)
-      return
+      return false
     }
 
     const task: DownloadTask = {
@@ -97,15 +97,19 @@ export class FileDownloadManager {
     if (!this.isDownloading) {
       this.startDownload()
     }
+    // 事件：加入队列
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:enqueued', { detail: { url: task.url } })) } catch {}
+    return true
   }
 
   // 批量添加下载任务
-  addBatchDownload(results: TaskResult[], taskName?: string): void {
+  addBatchDownload(results: TaskResult[], taskName?: string): string[] {
     const config = storage.getDownloadConfig()
+    const addedUrls: string[] = []
     
     results.forEach(result => {
-      // 检查是否已经在下载队列中
-      const existingTask = this.downloadQueue.find(t => t.url === result.imageUrl) || 
+      // 检查是否已经在下载队列中或正在下载
+      const existingTask = this.downloadQueue.find(t => t.url === result.imageUrl) ||
                           Array.from(this.activeDownloads.values()).find(t => t.url === result.imageUrl)
       
       if (existingTask) {
@@ -124,12 +128,15 @@ export class FileDownloadManager {
       }
 
       this.downloadQueue.push(task)
+      addedUrls.push(task.url)
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:enqueued', { detail: { url: task.url } })) } catch {}
     })
 
     // 如果没有正在下载，开始下载
     if (!this.isDownloading) {
       this.startDownload()
     }
+    return addedUrls
   }
 
   // 开始下载队列
@@ -139,7 +146,8 @@ export class FileDownloadManager {
     }
 
     this.isDownloading = true
-    toast.info(`开始下载 ${this.downloadQueue.length} 个文件`)
+    // 事件：开始下载
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:start')) } catch {}
 
     const workers = Math.min(this.maxConcurrentDownloads, this.downloadQueue.length)
 
@@ -154,10 +162,12 @@ export class FileDownloadManager {
 
     try {
       await Promise.allSettled(downloadPromises)
-      toast.success('所有文件下载完成')
+      // 事件：所有文件下载完成
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:done')) } catch {}
     } catch (error) {
       console.error('批量下载出错:', error)
-      toast.error('部分文件下载失败')
+      // 事件：下载失败
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:error', { detail: { error: error instanceof Error ? error.message : '未知错误' } })) } catch {}
     } finally {
       this.isDownloading = false
     }
@@ -169,6 +179,7 @@ export class FileDownloadManager {
     this.activeDownloads.set(task.url, task)
     task.status = 'downloading'
     task.progress = 0
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:start', { detail: { url: task.url } })) } catch {}
 
     try {
       // 1) 优先使用官方 ESM API（在 Tauri 窗口内可用）
@@ -213,6 +224,7 @@ export class FileDownloadManager {
         // 更新任务状态
         task.status = 'completed'
         task.progress = 1
+        try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:done', { detail: { url: task.url, path: savedPath } })) } catch {}
 
         // 写回任务结果：标记已下载与本地路径
         try {
@@ -221,14 +233,12 @@ export class FileDownloadManager {
           for (const t of tasks) {
             const r = t.results.find(r => r.id === task.id)
             if (r) {
-              // 如果 savedPath 不是绝对路径，需要构造完整路径
-              const fullPath = savedPath.startsWith('/') ? savedPath : 
-                              (baseDir ? `${baseDir}/${savedPath}` : savedPath)
-              r.localPath = fullPath
+              // 使用后端返回的完整路径（savedPath 已经是绝对路径）
+              r.localPath = savedPath
               r.downloaded = true
               updated = true
               storage.saveBatchTask(t)
-              console.log('[download] 更新本地路径:', { id: task.id, localPath: fullPath })
+              console.log('[download] 更新本地路径:', { id: task.id, localPath: savedPath })
               break
             }
           }
@@ -239,7 +249,7 @@ export class FileDownloadManager {
           console.error('[download] 写回本地路径失败', e)
         }
 
-        toast.success(`已保存: ${savedPath}`)
+        // 可选：交由上层统一提示
         return
       }
 
@@ -266,6 +276,7 @@ export class FileDownloadManager {
       // 更新任务状态
       task.status = 'completed'
       task.progress = 1
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:done', { detail: { url: task.url } })) } catch {}
 
       console.log(`文件已下载: ${task.filename}`)
 
@@ -273,8 +284,7 @@ export class FileDownloadManager {
       console.error(`下载失败 ${task.filename}:`, error)
       task.status = 'failed'
       task.error = error instanceof Error ? error.message : '未知错误'
-      
-      toast.error(`下载失败: ${task.filename}`)
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:error', { detail: { url: task.url, error: task.error } })) } catch {}
 
       try {
         if (typeof window !== 'undefined') {
@@ -398,7 +408,7 @@ export class FileDownloadManager {
   cancelAllDownloads(): void {
     this.downloadQueue = []
     this.isDownloading = false
-    toast.info('已取消所有下载任务')
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:cancelled')) } catch {}
   }
 
   // 设置最大并发下载数

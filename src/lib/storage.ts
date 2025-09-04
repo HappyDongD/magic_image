@@ -6,10 +6,25 @@ const STORAGE_KEYS = {
   CUSTOM_MODELS: 'ai-drawing-custom-models',
   BATCH_TASKS: 'ai-drawing-batch-tasks',
   MODEL_CONFIGS: 'ai-drawing-model-configs',
-  DOWNLOAD_CONFIG: 'ai-drawing-download-config'
+  DOWNLOAD_CONFIG: 'ai-drawing-download-config',
+  LICENSE_INFO: 'ai-drawing-license-info'
 }
 
 export const storage = {
+  // 激活信息
+  getLicenseInfo: (): { licenseKey?: string; machineId?: string; activated?: boolean } => {
+    if (typeof window === 'undefined') return { activated: false }
+    const raw = localStorage.getItem(STORAGE_KEYS.LICENSE_INFO)
+    return raw ? JSON.parse(raw) : { activated: false }
+  },
+  saveLicenseInfo: (info: { licenseKey?: string; machineId?: string; activated?: boolean }) => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(STORAGE_KEYS.LICENSE_INFO, JSON.stringify(info))
+  },
+  isActivated: (): boolean => {
+    const lic = storage.getLicenseInfo()
+    return !!lic.activated && !!lic.machineId && !!lic.licenseKey
+  },
   // API 配置相关操作
   getApiConfig: (): ApiConfig | null => {
     if (typeof window === 'undefined') return null
@@ -19,6 +34,10 @@ export const storage = {
 
   setApiConfig: (key: string, baseUrl: string): void => {
     if (typeof window === 'undefined') return
+    // 保存前校验激活
+    if (!storage.isActivated()) {
+      throw new Error('尚未激活，无法保存 API 配置')
+    }
     const apiConfig: ApiConfig = {
       key,
       baseUrl,

@@ -7,6 +7,7 @@ import { GeneratedImage } from "@/types"
 import Image from "next/image"
 import { Download, Trash2, Edit } from "lucide-react"
 import { Button } from "./ui/button"
+import { downloadService } from '@/lib/download-service'
 
 interface HistoryDialogProps {
   open: boolean
@@ -29,20 +30,11 @@ export function HistoryDialog({ open, onOpenChange, onEditImage }: HistoryDialog
   }
 
   const handleDownload = async (url: string) => {
-    try {
-      const response = await fetch(url)
-      const blob = await response.blob()
-      const blobUrl = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = blobUrl
-      link.download = 'generated-image.png'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(blobUrl)
-    } catch (error) {
-      console.error('下载失败:', error)
-    }
+    // 使用统一的下载服务
+    await downloadService.downloadImage(url, {
+      taskName: 'history',
+      showToast: true
+    })
   }
 
   const handleEdit = (item: GeneratedImage) => {
