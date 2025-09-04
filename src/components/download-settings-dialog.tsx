@@ -119,61 +119,17 @@ export function DownloadSettingsDialog({ children }: DownloadSettingsDialogProps
 
                 <div className="space-y-3">
                   <Label htmlFor="defaultPath" className="text-base font-medium">默认下载路径</Label>
-                      <div className="flex gap-2 items-center">
                   <Input
                     id="defaultPath"
-                          placeholder="请选择下载目录（桌面端优先，浏览器将使用默认下载目录）"
+                    placeholder="请输入下载目录（桌面端优先，浏览器将使用默认下载目录）"
                     value={config.defaultPath}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            setConfig(prev => ({ ...prev, defaultPath: v }))
-                            storage.saveDownloadConfig({ ...storage.getDownloadConfig(), defaultPath: v })
-                          }}
-                          className="h-10 flex-1"
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setConfig(prev => ({ ...prev, defaultPath: v }))
+                      storage.saveDownloadConfig({ ...storage.getDownloadConfig(), defaultPath: v })
+                    }}
+                    className="h-10"
                   />
-                        <Button
-                          variant="outline"
-                          onClick={async () => {
-                            let dir = await pickDirectory()
-                            if (!dir) {
-                              // Tauri 后端兜底
-                              try {
-                                const api = await import('@tauri-apps/api/core')
-                                dir = await api.invoke<string | null>('pick_dir_blocking') || undefined
-                              } catch {}
-                            }
-                            if (dir) {
-                              setConfig(prev => ({ ...prev, defaultPath: dir }))
-                              storage.saveDownloadConfig({ ...storage.getDownloadConfig(), defaultPath: dir })
-                              toast.success('已选择下载目录')
-                            } else {
-                              dirInputRef.current?.click()
-                            }
-                          }}
-                        >
-                          选择文件夹
-                        </Button>
-                        <input
-                          ref={dirInputRef}
-                          type="file"
-                          // @ts-ignore
-                          webkitdirectory=""
-                          // @ts-ignore
-                          directory=""
-                          multiple
-                          className="hidden"
-                          onChange={(e) => {
-                            const files = e.target.files
-                            if (files && files.length > 0) {
-                              const first = files[0] as any
-                              const fakeDir = (first?.webkitRelativePath || '').split('/')[0] || 'Downloads'
-                              setConfig(prev => ({ ...prev, defaultPath: fakeDir }))
-                              storage.saveDownloadConfig({ ...storage.getDownloadConfig(), defaultPath: fakeDir })
-                              toast.info('已选择目录（浏览器环境仅记录目录名）')
-                            }
-                          }}
-                        />
-                  </div>
                 </div>
               </CardContent>
             </Card>

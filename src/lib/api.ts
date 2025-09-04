@@ -1,21 +1,9 @@
 import { storage } from "./storage"
-import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType } from "@/types"
+import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType, GenerateImageRequest } from "@/types"
 import { toast } from "sonner"
 import { AlertCircle } from "lucide-react"
 
-export interface GenerateImageRequest {
-  prompt: string
-  model: GenerationModel
-  modelType?: ModelType
-  sourceImage?: string
-  isImageToImage?: boolean
-  aspectRatio?: AspectRatio
-  size?: ImageSize
-  n?: number
-  quality?: 'high' | 'medium' | 'low' | 'hd' | 'standard'| 'auto'
-  mask?: string
-  sourceImages?: string[]
-}
+// 使用 types 中的 GenerateImageRequest 定义
 
 export interface StreamCallback {
   onMessage: (content: string) => void
@@ -403,6 +391,11 @@ export const api = {
       return
     }
 
+    // 为聊天格式在提示词中附带尺寸信息
+    const isChatModel = (request.modelType || ModelType.OPENAI) !== ModelType.DALLE
+    const resolvedSize = request.size || (request.aspectRatio === '1:1' ? '1024x1024' : request.aspectRatio === '16:9' ? '1792x1024' : '1024x1792')
+    const promptForChat = isChatModel ? `${request.prompt}\n图片尺寸：${resolvedSize}` : request.prompt
+
     // 多图片支持：修改消息构建逻辑
     const messages = request.isImageToImage ? [
       {
@@ -410,7 +403,7 @@ export const api = {
         content: [
           {
             type: 'text',
-            text: request.prompt
+            text: promptForChat
           },
           // 如果有sourceImages数组，使用所有图片
           ...(Array.isArray(request.sourceImages) ? 
@@ -428,7 +421,7 @@ export const api = {
     ] : [
       {
         role: 'user',
-        content: request.prompt
+        content: promptForChat
       }
     ]
 
@@ -457,13 +450,18 @@ export const api = {
 
     const requestUrl = buildRequestUrl(config.baseUrl, endpoint);
 
+    const controller = new AbortController()
+    const timeoutMs = request.timeoutMs ?? 120000
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
     const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.key}`
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
     })
 
     if (!response.ok) {
@@ -543,9 +541,15 @@ export const api = {
         }
       }
     } catch (error) {
-      console.error('处理流数据失败:', error)
-      callbacks.onError('处理响应数据失败')
+      if ((error as any)?.name === 'AbortError') {
+        callbacks.onError('请求超时')
+      } else {
+        console.error('处理流数据失败:', error)
+        callbacks.onError('处理响应数据失败')
+      }
+    } finally {
+      clearTimeout(timeoutId)
+      reader.releaseLock()
     }
-    reader.releaseLock()
   }
 } 

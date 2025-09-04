@@ -51,6 +51,7 @@ export interface GenerateImageRequest {
   n?: number
   quality?: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard'
   mask?: string
+  timeoutMs?: number
 }
 
 // 批量任务相关类型
@@ -98,6 +99,7 @@ export interface BatchTaskConfig {
   size: ImageSize
   quality: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard'
   generateCount?: number // 新增：每个提示词的生成次数
+  apiTimeoutMs?: number
 }
 
 export interface TaskItem {

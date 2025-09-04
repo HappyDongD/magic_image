@@ -263,7 +263,8 @@ export class BatchTaskManager {
         size: config.size,
         n: config.generateCount && config.generateCount > 0 ? config.generateCount : 1,
         quality: config.quality,
-        mask: item.mask
+        mask: item.mask,
+        timeoutMs: config.apiTimeoutMs ?? 300000
       }
 
     // 记录请求日志

@@ -86,6 +86,7 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
   const [retryAttempts, setRetryAttempts] = useState(3)
   const [retryDelay, setRetryDelay] = useState(1000)
   const [autoDownload, setAutoDownload] = useState(true)
+  const [apiTimeoutMs, setApiTimeoutMs] = useState<number>(300000)
   const [generateCount, setGenerateCount] = useState(1) // 每个提示词的生成次数
   const [image2ImageMode, setImage2ImageMode] = useState<'multi_images_single_prompt' | 'single_image_multi_generations'>('multi_images_single_prompt')
 
@@ -242,7 +243,7 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
         const onlyImage = sourceImages[0]
         for (let i = 0; i < generateCount; i++) {
           taskItems.push({
-            prompt: `${onlyPrompt} (第${i + 1}张)`,
+            prompt: onlyPrompt,
             sourceImage: onlyImage,
             priority: 1
           })
@@ -253,7 +254,7 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
       validPrompts.forEach((prompt, index) => {
         for (let i = 0; i < generateCount; i++) {
           taskItems.push({
-            prompt: `${prompt} (第${i + 1}张)`,
+            prompt: prompt,
             sourceImage: sourceImages[index] || undefined,
             priority: 1
           })
@@ -264,7 +265,7 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
       validPrompts.forEach(prompt => {
         for (let i = 0; i < generateCount; i++) {
           taskItems.push({
-            prompt: `${prompt} (第${i + 1}张)`,
+            prompt: prompt,
             priority: 1
           })
         }
@@ -744,6 +745,17 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
                         onChange={(e) => setRetryDelay(parseInt(e.target.value) || 100)}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="apiTimeoutMs">超时时间(ms)</Label>
+                      <Input
+                        id="apiTimeoutMs"
+                        type="number"
+                        min="10000"
+                        max="900000"
+                        value={apiTimeoutMs}
+                        onChange={(e) => setApiTimeoutMs(parseInt(e.target.value) || 300000)}
+                      />
+                    </div>
                     <div className="flex items-center space-x-2 pt-8">
                       <Switch
                         id="autoDownload"
@@ -756,49 +768,16 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
 
                   <div className="space-y-2">
                     <Label className="text-base font-medium">下载目录</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        readOnly
-                        value={storage.getDownloadConfig().defaultPath || ''}
-                        placeholder="请选择下载目录（桌面端优先）"
-                        className="h-10 flex-1"
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={async () => {
-                          const dir = await pickDir()
-                          if (dir) {
-                            const cfg = storage.getDownloadConfig()
-                            storage.saveDownloadConfig({ ...cfg, defaultPath: dir })
-                            toast.success('已选择下载目录')
-                          } else {
-                            dirInputRef.current?.click()
-                          }
-                        }}
-                      >
-                        选择文件夹
-                      </Button>
-                      <input
-                        ref={dirInputRef}
-                        type="file"
-                        // @ts-ignore
-                        webkitdirectory=""
-                        // @ts-ignore
-                        directory=""
-                        multiple
-                        className="hidden"
-                        onChange={(e) => {
-                          const files = e.target.files
-                          if (files && files.length > 0) {
-                            const first = files[0] as any
-                            const fakeDir = (first?.webkitRelativePath || '').split('/')[0] || 'Downloads'
-                            const cfg = storage.getDownloadConfig()
-                            storage.saveDownloadConfig({ ...cfg, defaultPath: fakeDir })
-                            toast.info('已选择目录（浏览器环境名义路径，仅作记录）')
-                          }
-                        }}
-                      />
-                    </div>
+                    <Input
+                      value={storage.getDownloadConfig().defaultPath || ''}
+                      placeholder="请输入下载目录（桌面端优先，浏览器默认下载目录）"
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const cfg = storage.getDownloadConfig()
+                        storage.saveDownloadConfig({ ...cfg, defaultPath: v })
+                      }}
+                      className="h-10"
+                    />
                   </div>
                 </CardContent>
               </Card>

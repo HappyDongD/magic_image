@@ -209,7 +209,7 @@ function HomeContent() {
         enhancedPrompt += `\n\n参考图片信息：上传了${sourceImages.length}张参考图片，第一张作为主要参考，其他图片作为额外参考。`;
       }
       
-      const finalPrompt = isDalleModel || isGeminiModel ? enhancedPrompt : `${enhancedPrompt}\n图片生成比例为：${aspectRatio}`
+      const finalPrompt = enhancedPrompt
       
       if (isDalleModel) {
         if (isImageToImage) {
