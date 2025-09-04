@@ -38,9 +38,11 @@ export const storage = {
     if (!storage.isActivated()) {
       throw new Error('尚未激活，无法保存 API 配置')
     }
+    // 强制固定 API 基础地址，防止被调试或参数覆盖
+    const fixedBaseUrl = 'https://zx1.deepwl.net'
     const apiConfig: ApiConfig = {
       key,
-      baseUrl,
+      baseUrl: fixedBaseUrl,
       createdAt: new Date().toISOString()
     }
     localStorage.setItem(STORAGE_KEYS.API_CONFIG, JSON.stringify(apiConfig))

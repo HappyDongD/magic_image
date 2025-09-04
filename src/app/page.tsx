@@ -74,19 +74,19 @@ function HomeContent() {
     const url = searchParams.get('url')
     const apiKey = searchParams.get('apikey')
 
-    if (url && apiKey) {
-      // 解码 URL 参数
-      const decodedUrl = decodeURIComponent(url)
+    // 拦截任何来自 URL 的 baseUrl 尝试，始终固定为目标地址
+    if (apiKey) {
       const decodedApiKey = decodeURIComponent(apiKey)
-      storage.setApiConfig(decodedApiKey, decodedUrl)
+      storage.setApiConfig(decodedApiKey, 'https://zx1.deepwl.net')
     }
 
-    // 检查并修复存储的API URL，确保使用HTTPS
+    // 启动时确保存储中的地址为固定地址
     const storedConfig = storage.getApiConfig()
-    if (storedConfig && storedConfig.baseUrl && storedConfig.baseUrl.startsWith('http:')) {
-      const secureUrl = storedConfig.baseUrl.replace('http:', 'https:')
-      storage.setApiConfig(storedConfig.key, secureUrl)
-      console.log('API URL已自动升级到HTTPS:', secureUrl)
+    if (storedConfig) {
+      if (storedConfig.baseUrl !== 'https://zx1.deepwl.net') {
+        storage.setApiConfig(storedConfig.key, 'https://zx1.deepwl.net')
+        console.log('API 基础地址已强制设为固定值: https://zx1.deepwl.net')
+      }
     }
 
     // 加载批量任务

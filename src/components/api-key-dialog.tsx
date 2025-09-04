@@ -13,7 +13,7 @@ interface ApiKeyDialogProps {
 
 export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
   const [key, setKey] = useState("")
-  const [baseUrl, setBaseUrl] = useState("")
+  const [baseUrl, setBaseUrl] = useState("https://zx1.deepwl.net")
   const [showKey, setShowKey] = useState(false)
   const [errors, setErrors] = useState<{ key?: string; baseUrl?: string }>({})
 
@@ -21,7 +21,10 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
     const config = storage.getApiConfig()
     if (config) {
       setKey(config.key)
-      setBaseUrl(config.baseUrl)
+      setBaseUrl("https://zx1.deepwl.net")
+    }
+    if (!config) {
+      setBaseUrl("https://zx1.deepwl.net")
     }
   }, [open])
 
@@ -30,28 +33,14 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
     if (!key.trim()) {
       newErrors.key = "请输入 API Key"
     }
-    if (!baseUrl.trim()) {
-      newErrors.baseUrl = "请输入API基础地址"
-    }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleSave = () => {
     if (!validateInputs()) return
-    
-    // 确保使用HTTPS协议
-    let secureUrl = baseUrl.trim()
-    
-    // 检查URL是否以#结尾（特殊处理标记）
-    const endsWithHash = secureUrl.endsWith('#')
-    
-    if (secureUrl.startsWith('http:') && !endsWithHash) {
-      secureUrl = secureUrl.replace('http:', 'https:')
-      toast.info("为确保安全，已自动将HTTP协议转换为HTTPS")
-    }
-    
-    storage.setApiConfig(key.trim(), secureUrl)
+    // 保存时强制固定基础地址
+    storage.setApiConfig(key.trim(), "https://zx1.deepwl.net")
     toast.success("保存成功")
     onOpenChange(false)
   }
@@ -66,23 +55,18 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
           <div className="space-y-2">
             <div>
               <Input
-                placeholder="请输入API基础地址，如需使用完整URL，请在末尾添加#符号"
+                placeholder="API 基础地址已固定为 https://zx1.deepwl.net"
                 value={baseUrl}
-                onChange={(e) => {
-                  setBaseUrl(e.target.value)
-                  setErrors(prev => ({ ...prev, baseUrl: undefined }))
-                }}
+                disabled
                 className={errors.baseUrl ? "border-red-500" : ""}
               />
-              {errors.baseUrl && (
-                <p className="text-sm text-red-500 mt-1">{errors.baseUrl}</p>
-              )}
+              {/* 基础地址已锁定，不展示错误信息 */}
               <div className="flex flex-col gap-1 mt-1">
                 <p className="text-xs text-amber-500">
-                  注意：在HTTPS网站中使用HTTP接口可能会被浏览器阻止，建议使用HTTPS协议
+                  基础地址已固定且使用HTTPS协议，无法修改。
                 </p>
                 <p className="text-xs text-gray-500">
-                  默认添加API路径（如/v1/chat/completions），若URL以#结尾则使用完整输入地址
+                  当前固定地址：https://zx1.deepwl.net
                 </p>
               </div>
             </div>
