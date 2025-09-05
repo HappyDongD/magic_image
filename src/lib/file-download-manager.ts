@@ -1,5 +1,6 @@
 import { TaskResult, DownloadConfig } from '@/types'
 import { storage } from './storage'
+import { sqliteStorage } from './sqlite-storage'
 import { toast } from 'sonner'
 
 export interface DownloadTask {
@@ -228,7 +229,7 @@ export class FileDownloadManager {
 
         // 写回任务结果：标记已下载与本地路径
         try {
-          const tasks = storage.getBatchTasks()
+          const tasks = await sqliteStorage.getBatchTasks()
           let updated = false
           for (const t of tasks) {
             const r = t.results.find(r => r.id === task.id)
@@ -237,7 +238,7 @@ export class FileDownloadManager {
               r.localPath = savedPath
               r.downloaded = true
               updated = true
-              storage.saveBatchTask(t)
+              await sqliteStorage.saveBatchTask(t)
               console.log('[download] 更新本地路径:', { id: task.id, localPath: savedPath })
               break
             }
@@ -340,9 +341,9 @@ export class FileDownloadManager {
   }
 
   // 重试下载任务
-  retryDownload(taskId: string, taskName?: string): void {
+  async retryDownload(taskId: string, taskName?: string): Promise<void> {
     // 查找失败的任务
-    const tasks = storage.getBatchTasks()
+    const tasks = await sqliteStorage.getBatchTasks()
     let found = false
     
     for (const t of tasks) {
@@ -360,8 +361,8 @@ export class FileDownloadManager {
   }
 
   // 批量重试失败的任务
-  retryFailedDownloads(taskId?: string): void {
-    const tasks = storage.getBatchTasks()
+  async retryFailedDownloads(taskId?: string): Promise<void> {
+    const tasks = await sqliteStorage.getBatchTasks()
     let retryCount = 0
     
     for (const t of tasks) {
@@ -386,8 +387,8 @@ export class FileDownloadManager {
   }
 
   // 重新下载所有任务
-  retryAllDownloads(): void {
-    const tasks = storage.getBatchTasks()
+  async retryAllDownloads(): Promise<void> {
+    const tasks = await sqliteStorage.getBatchTasks()
     let retryCount = 0
     
     for (const t of tasks) {

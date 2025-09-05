@@ -15,7 +15,7 @@ import { DownloadSettingsDialog } from "@/components/download-settings-dialog"
 import { useState, useRef, useEffect, Suspense } from "react"
 import { api } from "@/lib/api"
 import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType, BatchTask } from "@/types"
-import { storage } from "@/lib/storage"
+import { storage } from "@/lib/sqlite-storage"
 import { batchTaskManager } from "@/lib/batch-task-manager"
 import { v4 as uuidv4 } from 'uuid'
 import { Dialog, DialogContent } from "@/components/ui/dialog"
@@ -71,46 +71,55 @@ function HomeContent() {
   const [downloadStatus, setDownloadStatus] = useState<Record<string, 'idle' | 'downloading' | 'success' | 'error'>>({})
 
   useEffect(() => {
-    const url = searchParams.get('url')
-    const apiKey = searchParams.get('apikey')
+    const initializeApp = async () => {
+      const url = searchParams.get('url')
+      const apiKey = searchParams.get('apikey')
 
-    try {
-      const activated = storage.isActivated()
+      try {
+        const activated = storage.isActivated()
 
-      // 仅在已激活时才写入配置，避免未激活抛错导致客户端异常
-      if (apiKey && activated) {
-        const decodedApiKey = decodeURIComponent(apiKey)
-        storage.setApiConfig(decodedApiKey, 'https://zx1.deepwl.net')
-      }
-
-      // 启动时确保存储中的地址为固定地址（仅在已激活时执行）
-      if (activated) {
-        const storedConfig = storage.getApiConfig()
-        if (storedConfig && storedConfig.baseUrl !== 'https://zx1.deepwl.net') {
-          storage.setApiConfig(storedConfig.key, 'https://zx1.deepwl.net')
-          console.log('API 基础地址已强制设为固定值: https://zx1.deepwl.net')
+        // 仅在已激活时才写入配置，避免未激活抛错导致客户端异常
+        if (apiKey && activated) {
+          const decodedApiKey = decodeURIComponent(apiKey)
+          storage.setApiConfig(decodedApiKey, 'https://zx1.deepwl.net')
         }
+
+        // 启动时确保存储中的地址为固定地址（仅在已激活时执行）
+        if (activated) {
+          const storedConfig = storage.getApiConfig()
+          if (storedConfig && storedConfig.baseUrl !== 'https://zx1.deepwl.net') {
+            storage.setApiConfig(storedConfig.key, 'https://zx1.deepwl.net')
+            console.log('API 基础地址已强制设为固定值: https://zx1.deepwl.net')
+          }
+        }
+      } catch (e) {
+        // 兜底：任何异常都不应中断页面加载
+        console.warn('初始化API配置时跳过写入：', e)
       }
-    } catch (e) {
-      // 兜底：任何异常都不应中断页面加载
-      console.warn('初始化API配置时跳过写入：', e)
+
+      // 加载批量任务
+      try {
+        const savedTasks = await storage.getBatchTasks()
+        setBatchTasks(savedTasks)
+
+        // 监听批量任务更新
+        const cleanup = savedTasks.map(task =>
+          batchTaskManager.onTaskUpdate(task.id, async (updatedTask) => {
+            setBatchTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t))
+            await storage.saveBatchTask(updatedTask)
+          })
+        )
+
+        return () => {
+          cleanup.forEach(clean => clean())
+        }
+      } catch (error) {
+        console.error('加载批量任务失败:', error)
+        setBatchTasks([])
+      }
     }
 
-    // 加载批量任务
-    const savedTasks = storage.getBatchTasks()
-    setBatchTasks(savedTasks)
-
-    // 监听批量任务更新
-    const cleanup = savedTasks.map(task =>
-      batchTaskManager.onTaskUpdate(task.id, (updatedTask) => {
-        setBatchTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t))
-        storage.saveBatchTask(updatedTask)
-      })
-    )
-
-    return () => {
-      cleanup.forEach(clean => clean())
-    }
+    initializeApp()
   }, [searchParams])
 
   // 监听模型变化，自动设置正确的模型类型（优先使用自定义模型的明确类型）

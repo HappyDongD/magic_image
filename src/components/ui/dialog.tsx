@@ -6,6 +6,22 @@ import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+// VisuallyHidden component for accessibility
+const VisuallyHidden = React.forwardRef<
+  HTMLSpanElement,
+  React.HTMLAttributes<HTMLSpanElement>
+>(({ className, ...props }, ref) => (
+  <span
+    ref={ref}
+    className={cn(
+      "absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0",
+      className
+    )}
+    {...props}
+  />
+))
+VisuallyHidden.displayName = "VisuallyHidden"
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -51,6 +67,11 @@ function DialogContent({
   children,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
+  // Check if children contain a DialogTitle
+  const hasTitle = React.Children.toArray(children).some(
+    (child) => React.isValidElement(child) && child.type === DialogTitle
+  )
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -64,6 +85,12 @@ function DialogContent({
         {...props}
       >
         {children}
+        {/* Add hidden title if no DialogTitle is present */}
+        {!hasTitle && (
+          <VisuallyHidden>
+            <DialogTitle>Dialog</DialogTitle>
+          </VisuallyHidden>
+        )}
         <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
           <XIcon />
           <span className="sr-only">Close</span>

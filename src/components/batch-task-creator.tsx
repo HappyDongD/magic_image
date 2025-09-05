@@ -33,7 +33,7 @@ import {
   ImageSize
 } from '@/types'
 import { batchTaskManager } from '@/lib/batch-task-manager'
-import { storage } from '@/lib/storage'
+import { storage } from '@/lib/sqlite-storage'
 import { toast } from 'sonner'
 import { v4 as uuidv4 } from 'uuid'
 import { ModelConfigDialog } from '@/components/model-config-dialog'
@@ -217,7 +217,7 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
     return true
   }
 
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
     if (!validateForm()) return
 
     const validPrompts = prompts.filter(p => p.trim())
@@ -306,20 +306,34 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
         status: 'pending' as any
       }
 
-      storage.saveBatchTask(updatedTask)
-      if (onTaskUpdated) {
-        onTaskUpdated(updatedTask)
+      try {
+        await storage.saveBatchTask(updatedTask)
+        if (onTaskUpdated) {
+          onTaskUpdated(updatedTask)
+        }
+        toast.success(`批量任务 "${finalTaskName}" 已更新，包含 ${taskItems.length} 个任务项`)
+      } catch (error) {
+        console.error('保存任务失败:', error)
+        toast.error(error instanceof Error ? error.message : '保存任务失败，存储空间可能不足')
+        return // 不继续执行后续重置逻辑
       }
-      toast.success(`批量任务 "${finalTaskName}" 已更新，包含 ${taskItems.length} 个任务项`)
     } else {
       // 创建模式：创建新任务
       const taskId = batchTaskManager.createTask(finalTaskName, taskItems, config, taskType)
       const task = batchTaskManager.getTask(taskId)
 
       if (task) {
-        storage.saveBatchTask(task)
-        onTaskCreated(task)
-        toast.success(`批量任务 "${finalTaskName}" 已创建，包含 ${taskItems.length} 个任务项`)
+        try {
+          await storage.saveBatchTask(task)
+          onTaskCreated(task)
+          toast.success(`批量任务 "${finalTaskName}" 已创建，包含 ${taskItems.length} 个任务项`)
+        } catch (error) {
+          console.error('保存任务失败:', error)
+          // 如果保存失败，从内存中删除任务
+          batchTaskManager.deleteTask(taskId)
+          toast.error(error instanceof Error ? error.message : '保存任务失败，存储空间可能不足')
+          return // 不继续执行后续重置逻辑
+        }
       }
     }
 

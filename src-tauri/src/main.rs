@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod simple_database;
+
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -9,6 +11,83 @@ use tauri::Manager;
 use tauri::Emitter;
 use sysinfo::System;
 use sha2::{Digest, Sha256};
+use serde::{Deserialize, Serialize};
+
+// 批量任务相关结构体定义
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchTaskConfig {
+    pub model: String,
+    pub model_type: String,
+    pub concurrent_limit: i32,
+    pub retry_attempts: i32,
+    pub retry_delay: i32,
+    pub auto_download: bool,
+    pub aspect_ratio: String,
+    pub size: String,
+    pub quality: String,
+    pub generate_count: Option<i32>,
+    pub api_timeout_ms: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskItem {
+    pub id: String,
+    pub prompt: String,
+    pub source_image: Option<String>,
+    pub mask: Option<String>,
+    pub priority: i32,
+    pub status: String,
+    pub attempt_count: i32,
+    pub created_at: String,
+    pub processed_at: Option<String>,
+    pub error: Option<String>,
+    pub debug_logs: Option<Vec<DebugLog>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskResult {
+    pub id: String,
+    pub task_item_id: String,
+    pub image_url: String,
+    pub local_path: Option<String>,
+    pub downloaded: bool,
+    pub created_at: String,
+    pub duration_ms: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugLog {
+    pub id: String,
+    pub task_item_id: String,
+    pub timestamp: String,
+    pub r#type: String,
+    pub data: serde_json::Value,
+    pub duration: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchTask {
+    pub id: String,
+    pub name: String,
+    pub r#type: String,
+    pub status: String,
+    pub progress: i32,
+    pub total_items: i32,
+    pub completed_items: i32,
+    pub failed_items: i32,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub config: BatchTaskConfig,
+    pub items: Vec<TaskItem>,
+    pub results: Vec<TaskResult>,
+    pub error: Option<String>,
+}
 
 #[tauri::command]
 fn read_local_file(path: String) -> Result<String, String> {
@@ -112,7 +191,7 @@ fn download_file(url: String, filename: String, dir: Option<String>, app_handle:
                         Ok(0) => break,
                         Ok(n) => n,
                         Err(e) => {
-                            last_err = Some(format!("读取流失败: {}", e));
+                            let _ = last_err.insert(format!("读取流失败: {}", e));
                             break;
                         }
                     };
@@ -171,9 +250,83 @@ fn get_machine_id() -> Result<String, String> {
     Ok(id)
 }
 
+// SQLite 数据库命令
+#[tauri::command]
+async fn get_batch_tasks(app_handle: tauri::AppHandle) -> Result<Vec<BatchTask>, String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    simple_database::SimpleDatabase::get_all_batch_tasks(&app_handle)
+        .await
+        .map_err(|e| format!("获取任务失败: {}", e))
+}
+
+#[tauri::command]
+async fn save_batch_task(app_handle: tauri::AppHandle, task: BatchTask) -> Result<(), String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    simple_database::SimpleDatabase::save_batch_task(&app_handle, &task)
+        .await
+        .map_err(|e| format!("保存任务失败: {}", e))
+}
+
+#[tauri::command]
+async fn delete_batch_task(app_handle: tauri::AppHandle, task_id: String) -> Result<(), String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    simple_database::SimpleDatabase::delete_batch_task(&app_handle, &task_id)
+        .await
+        .map_err(|e| format!("删除任务失败: {}", e))
+}
+
+#[tauri::command]
+async fn clear_batch_tasks(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    simple_database::SimpleDatabase::clear_batch_tasks(&app_handle)
+        .await
+        .map_err(|e| format!("清空任务失败: {}", e))
+}
+
+#[tauri::command]
+async fn get_task_count(app_handle: tauri::AppHandle) -> Result<i64, String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    simple_database::SimpleDatabase::get_task_count(&app_handle)
+        .await
+        .map_err(|e| format!("获取任务数量失败: {}", e))
+}
+
+#[tauri::command]
+async fn cleanup_old_tasks(app_handle: tauri::AppHandle, max_tasks_to_keep: Option<i32>) -> Result<i64, String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    let max_keep = max_tasks_to_keep.unwrap_or(100) as i64;
+    
+    simple_database::SimpleDatabase::cleanup_old_tasks(&app_handle, max_keep)
+        .await
+        .map_err(|e| format!("清理旧任务失败: {}", e))
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![read_local_file, get_download_dir, download_file, get_machine_id])
+        .invoke_handler(tauri::generate_handler![
+            read_local_file,
+            get_download_dir,
+            download_file,
+            get_machine_id,
+            get_batch_tasks,
+            save_batch_task,
+            delete_batch_task,
+            clear_batch_tasks,
+            get_task_count,
+            cleanup_old_tasks
+        ])
         .setup(|_app| {
             #[cfg(debug_assertions)]
             {

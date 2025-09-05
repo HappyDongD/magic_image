@@ -2,6 +2,7 @@ import { BatchTask, BatchTaskStatus, TaskItem, TaskResult, BatchTaskConfig, Mode
 import { api } from './api'
 import { fileDownloadManager } from './file-download-manager'
 import { downloadService } from './download-service'
+import { sqliteStorage } from './sqlite-storage'
 import { storage } from './storage'
 import { v4 as uuidv4 } from 'uuid'
 import { toast } from 'sonner'
@@ -15,15 +16,35 @@ export class BatchTaskManager {
 
   constructor(maxConcurrency: number = 3) {
     this.maxConcurrency = maxConcurrency
-    this.loadTasksFromStorage()
+    // 延迟加载，避免SSR问题
+    if (typeof window !== 'undefined') {
+      this.loadTasksFromStorage()
+    }
+  }
+
+  // 保存任务到存储
+  private async saveTaskToStorage(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId)
+    if (!task) return
+    
+    try {
+      await sqliteStorage.saveBatchTask(task)
+    } catch (error) {
+      console.error('保存任务失败:', error)
+      // 即使保存失败，也继续执行，但记录错误
+    }
   }
 
   // 从存储中加载任务
-  private loadTasksFromStorage(): void {
-    const savedTasks = storage.getBatchTasks()
-    savedTasks.forEach(task => {
-      this.tasks.set(task.id, task)
-    })
+  private async loadTasksFromStorage(): Promise<void> {
+    try {
+      const savedTasks = await sqliteStorage.getBatchTasks()
+      savedTasks.forEach(task => {
+        this.tasks.set(task.id, task)
+      })
+    } catch (error) {
+      console.error('从存储加载任务失败:', error)
+    }
   }
 
   // 创建批量任务
@@ -57,6 +78,17 @@ export class BatchTaskManager {
 
     this.tasks.set(taskId, task)
     this.emitTaskUpdate(taskId)
+    
+    // 保存任务到存储
+    try {
+      sqliteStorage.saveBatchTask(task).catch(error => {
+        console.error('保存任务失败:', error)
+      })
+    } catch (error) {
+      console.error('保存任务失败:', error)
+      // 即使保存失败，也继续执行，但记录错误
+    }
+    
     return taskId
   }
 
@@ -109,7 +141,9 @@ export class BatchTaskManager {
     this.tasks.delete(taskId)
     this.eventListeners.delete(taskId)
     // 从存储中删除任务
-    storage.removeBatchTask(taskId)
+    sqliteStorage.removeBatchTask(taskId).catch(error => {
+      console.error('删除任务失败:', error)
+    })
   }
 
   // 获取任务
@@ -191,6 +225,9 @@ export class BatchTaskManager {
     item.attemptCount++
     item.processedAt = new Date().toISOString()
     this.emitTaskUpdate(taskId)
+    
+    // 保存任务状态更新
+    this.saveTaskToStorage(taskId)
 
     const startedAtMs = Date.now()
     try {
@@ -235,6 +272,9 @@ export class BatchTaskManager {
     // 更新进度
     task.progress = Math.round(((task.completedItems + task.failedItems) / task.totalItems) * 100)
     this.emitTaskUpdate(taskId)
+    
+    // 保存任务状态更新
+    this.saveTaskToStorage(taskId)
 
     // 继续处理队列
     setTimeout(() => {

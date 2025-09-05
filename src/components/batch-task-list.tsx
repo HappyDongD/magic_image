@@ -29,7 +29,7 @@ import { BatchTask, BatchTaskStatus, TaskType, TaskResult, TaskItem, DebugLog } 
 import { batchTaskManager } from '@/lib/batch-task-manager'
 import { toast } from 'sonner'
 import { downloadService } from '@/lib/download-service'
-import { storage } from '@/lib/storage'
+import { storage } from '@/lib/sqlite-storage'
 import { readLocalFile } from '@/lib/local-file'
 
 interface BatchTaskListProps {
@@ -351,7 +351,7 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
     setManualDownloading(prev => new Set(prev).add(url))
     
     // 找到对应的TaskResult
-    const tasks = storage.getBatchTasks()
+    const tasks = await storage.getBatchTasks()
     let targetTaskName = 'single'
     
     for (const task of tasks) {
