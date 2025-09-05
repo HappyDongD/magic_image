@@ -70,9 +70,7 @@ export function BatchTaskCreator({ onTaskCreated, currentModel, currentModelType
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState(() => {
     const d = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const local = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
-    return local
+    return d.getTime().toString()
   })
   const [taskType, setTaskType] = useState<TaskType>(TaskType.TEXT_TO_IMAGE)
   const [prompts, setPrompts] = useState<string[]>([''])
