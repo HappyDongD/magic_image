@@ -1,6 +1,6 @@
 "use client"
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -28,6 +28,7 @@ import { CustomModelDialog } from "@/components/custom-model-dialog"
 import { toast } from "sonner"
 import { DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
+ 
 export default function Home() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -609,6 +610,8 @@ function HomeContent() {
       </div>
 
       <div className="container mx-auto px-4 pb-8 max-w-[1200px]">
+ 
+        
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="single" className="flex items-center gap-2">

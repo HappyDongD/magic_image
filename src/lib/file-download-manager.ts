@@ -140,38 +140,56 @@ export class FileDownloadManager {
     return addedUrls
   }
 
-  // 开始下载队列
-  private async startDownload(): Promise<void> {
+  // 开始下载队列 - 完全异步，不阻塞UI
+  private startDownload(): void {
     if (this.isDownloading || this.downloadQueue.length === 0) {
       return
     }
 
     this.isDownloading = true
+    console.log('🚀 开始异步下载，不阻塞UI')
+    
     // 事件：开始下载
     try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:start')) } catch {}
 
-    const workers = Math.min(this.maxConcurrentDownloads, this.downloadQueue.length)
-
-    const downloadPromises = Array.from({ length: workers }, async () => {
-      while (this.downloadQueue.length > 0) {
-        const task = this.downloadQueue.shift()
-        if (task) {
-          await this.downloadFile(task)
-        }
+    // 使用 requestIdleCallback 或 setTimeout 确保不阻塞UI
+    const startDownloadWorker = () => {
+      const workers = Math.min(this.maxConcurrentDownloads, this.downloadQueue.length)
+      
+      for (let i = 0; i < workers; i++) {
+        this.processDownloadQueue()
       }
-    })
-
-    try {
-      await Promise.allSettled(downloadPromises)
-      // 事件：所有文件下载完成
-      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:done')) } catch {}
-    } catch (error) {
-      console.error('批量下载出错:', error)
-      // 事件：下载失败
-      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:error', { detail: { error: error instanceof Error ? error.message : '未知错误' } })) } catch {}
-    } finally {
-      this.isDownloading = false
     }
+
+    // 使用 requestIdleCallback 如果可用，否则使用 setTimeout
+    if (typeof window !== 'undefined' && window.requestIdleCallback) {
+      window.requestIdleCallback(startDownloadWorker, { timeout: 100 })
+    } else {
+      setTimeout(startDownloadWorker, 0)
+    }
+  }
+
+  // 处理下载队列 - 完全异步
+  private processDownloadQueue(): void {
+    if (this.downloadQueue.length === 0) {
+      this.isDownloading = false
+      try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('download:done')) } catch {}
+      return
+    }
+
+    const task = this.downloadQueue.shift()
+    if (!task) {
+      this.processDownloadQueue()
+      return
+    }
+
+    // 使用 setTimeout 确保不阻塞UI
+    setTimeout(() => {
+      this.downloadFile(task).finally(() => {
+        // 继续处理下一个任务
+        this.processDownloadQueue()
+      })
+    }, 0)
   }
 
   // 下载单个文件
@@ -215,12 +233,14 @@ export class FileDownloadManager {
         // 后端 download_file 仅接受 dir 和 filename，这里把子路径拼进 filename 以落地
         const filenameWithDirs = (subdirs.length > 0 ? subdirs.join('/') + '/' : '') + task.filename
 
-        console.log('[download] using tauri invoke')
+        console.log('[download] using tauri invoke', { url: task.url, filename: filenameWithDirs, dir: baseDir })
         const savedPath = await tauriInvoke('download_file', {
           url: task.url,
           filename: filenameWithDirs,
           dir: baseDir
         }) as string
+
+        console.log('[download] tauri invoke result:', { savedPath, type: typeof savedPath })
 
         // 更新任务状态
         task.status = 'completed'
@@ -229,22 +249,39 @@ export class FileDownloadManager {
 
         // 写回任务结果：标记已下载与本地路径
         try {
+          console.log('[download] 开始更新本地路径:', { taskId: task.id, savedPath })
           const tasks = await sqliteStorage.getBatchTasks()
+          console.log('[download] 获取到的任务数量:', tasks.length)
           let updated = false
           for (const t of tasks) {
+            console.log('[download] 检查任务:', { taskId: t.id, resultsCount: t.results.length })
             const r = t.results.find(r => r.id === task.id)
             if (r) {
+              console.log('[download] 找到匹配的结果:', { resultId: r.id, currentLocalPath: r.localPath })
               // 使用后端返回的完整路径（savedPath 已经是绝对路径）
               r.localPath = savedPath
               r.downloaded = true
               updated = true
               await sqliteStorage.saveBatchTask(t)
-              console.log('[download] 更新本地路径:', { id: task.id, localPath: savedPath })
+              console.log('[download] 更新本地路径成功:', { id: task.id, localPath: savedPath })
+              
+              // 发送下载完成事件，通知前端刷新
+              if (typeof window !== 'undefined') {
+                console.log('[download] 发送下载完成事件:', { taskId: t.id, resultId: task.id, localPath: savedPath })
+                window.dispatchEvent(new CustomEvent('download:complete', {
+                  detail: {
+                    taskId: t.id,
+                    resultId: task.id,
+                    localPath: savedPath,
+                    imageUrl: task.url
+                  }
+                }))
+              }
               break
             }
           }
           if (!updated) {
-            console.warn('[download] 未找到匹配的 TaskResult 以写回本地路径', task.id)
+            console.warn('[download] 未找到匹配的 TaskResult 以写回本地路径', { taskId: task.id, allTaskIds: tasks.map(t => t.id) })
           }
         } catch (e) {
           console.error('[download] 写回本地路径失败', e)

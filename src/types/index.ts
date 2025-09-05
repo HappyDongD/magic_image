@@ -58,6 +58,7 @@ export interface GenerateImageRequest {
 export enum BatchTaskStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
+  PAUSED = 'paused',
   COMPLETED = 'completed',
   FAILED = 'failed',
   CANCELLED = 'cancelled'

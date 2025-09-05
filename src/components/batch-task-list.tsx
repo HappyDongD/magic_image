@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   Play,
   Pause,
+  Square,
   Trash2,
   Eye,
   Download,
@@ -30,7 +31,42 @@ import { batchTaskManager } from '@/lib/batch-task-manager'
 import { toast } from 'sonner'
 import { downloadService } from '@/lib/download-service'
 import { storage } from '@/lib/sqlite-storage'
-import { readLocalFile } from '@/lib/local-file'
+
+// 本地图片组件 - 使用Tauri convertFileSrc
+function LocalImage({ localPath, fallbackUrl }: { localPath: string; fallbackUrl: string }) {
+  console.log(`🖼️ 本地图片路径: ${localPath}`)
+  
+  // 尝试使用Tauri的convertFileSrc
+  let tauriUrl = ''
+  try {
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      const { convertFileSrc } = require('@tauri-apps/api/core')
+      tauriUrl = convertFileSrc(localPath)
+      console.log(`🔗 Tauri转换后的URL: ${tauriUrl}`)
+    }
+  } catch (error) {
+    console.log('Tauri convertFileSrc 不可用:', error)
+  }
+  
+  // 如果Tauri转换成功，使用转换后的URL，否则回退到网络图片
+  const imageSrc = tauriUrl || fallbackUrl
+  
+  return (
+    <img
+      src={imageSrc}
+      alt="生成结果"
+      className="w-full h-full object-cover"
+      onError={(e) => {
+        console.error('本地图片加载失败，回退到网络图片:', localPath)
+        const img = e.target as HTMLImageElement
+        img.src = fallbackUrl
+      }}
+      onLoad={() => {
+        console.log('本地图片加载成功:', localPath)
+      }}
+    />
+  )
+}
 
 interface BatchTaskListProps {
   tasks: BatchTask[]
@@ -48,12 +84,18 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
   const [manualDownloading, setManualDownloading] = useState<Set<string>>(new Set())
   const [debugLogItem, setDebugLogItem] = useState<TaskItem | null>(null)
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false)
-  const [localImageCache, setLocalImageCache] = useState<Record<string, string>>({})
   const [pendingDeleteTaskId, setPendingDeleteTaskId] = useState<string | null>(null)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
 
   useEffect(() => {
-    const timer = setInterval(() => setTick(t => (t + 1) % 1_000_000), 1000)
+    const timer = setInterval(() => {
+      const startTime = performance.now()
+      setTick(t => (t + 1) % 1_000_000)
+      const endTime = performance.now()
+      if (endTime - startTime > 16) {
+        console.warn('⏱️ setTick 耗时过长:', endTime - startTime, 'ms')
+      }
+    }, 1000)
     return () => clearInterval(timer)
   }, [])
 
@@ -63,8 +105,13 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
     
     tasks.forEach(task => {
       const unsubscribe = batchTaskManager.onTaskUpdate(task.id, (updatedTask) => {
-        // 强制重新渲染组件
+        // 强制重新渲染组件，但添加性能监控
+        const startTime = performance.now()
         setTick(t => (t + 1) % 1_000_000)
+        const endTime = performance.now()
+        if (endTime - startTime > 16) {
+          console.warn('⏱️ 任务更新导致重渲染耗时过长:', endTime - startTime, 'ms')
+        }
       })
       unsubscribeCallbacks.push(unsubscribe)
     })
@@ -81,26 +128,13 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
     setIsDeleteConfirmOpen(true)
   }
 
-  // 预加载本地图片
-  useEffect(() => {
-    if (selectedTask && selectedTask.results.length > 0) {
-      selectedTask.results.forEach(result => {
-        if (result.localPath && !localImageCache[result.localPath]) {
-          readLocalFile(result.localPath).then(dataUrl => {
-            setLocalImageCache(prev => ({ ...prev, [result.localPath!]: dataUrl }))
-          }).catch(error => {
-            console.error('Failed to load local image:', result.localPath, error)
-          })
-        }
-      })
-    }
-  }, [selectedTask, localImageCache])
 
   useEffect(() => {
     ;(async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event')
         const unlisten1 = await listen('download:progress', (e: any) => {
+          const startTime = performance.now()
           const p = e?.payload || {}
           const url = String(p.url || '')
           if (!url) return
@@ -110,13 +144,10 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
           const bytesPerSec = Number(p.bytesPerSec || 0)
           const progress = total > 0 ? Math.min(1, downloaded / total) : 0
           
-          setDlProgress(prev => ({
-            ...prev,
-            [url]: {
-              progress,
-              bytesPerSec
-            }
-          }))
+          setDlProgress(prev => {
+            const newState = { ...prev, [url]: { progress, bytesPerSec } }
+            return newState
+          })
           
           // 如果下载完成，5秒后清理进度状态
           if (progress >= 1) {
@@ -134,8 +165,14 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
               })
             }, 5000)
           }
+          
+          const endTime = performance.now()
+          if (endTime - startTime > 16) {
+            console.warn('⏱️ 下载进度更新耗时过长:', endTime - startTime, 'ms', { url })
+          }
         })
         const unlisten2 = await listen('download:error', (e: any) => {
+          const startTime = performance.now()
           const p = e?.payload || {}
           const url = String(p.url || '')
           if (!url) return
@@ -155,6 +192,11 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
             newSet.delete(url)
             return newSet
           })
+          
+          const endTime = performance.now()
+          if (endTime - startTime > 16) {
+            console.warn('⏱️ 下载错误处理耗时过长:', endTime - startTime, 'ms', { url })
+          }
         })
         
         return () => {
@@ -202,13 +244,44 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
         return next
       })
     }
+    
+    // 监听下载完成事件，刷新任务数据
+    const onDownloadComplete = (e: any) => {
+      const { taskId, resultId, localPath, imageUrl } = e?.detail || {}
+      console.log('🎉 收到下载完成事件:', { taskId, resultId, localPath, imageUrl })
+      
+      if (taskId && selectedTask && selectedTask.id === taskId) {
+        // 更新当前选中的任务数据
+        const updatedTask = { ...selectedTask }
+        const result = updatedTask.results.find(r => r.id === resultId)
+        if (result) {
+          result.localPath = localPath
+          result.downloaded = true
+          console.log('🔄 更新任务结果本地路径:', { resultId, localPath })
+          
+          // 重新加载任务数据
+          const task = batchTaskManager?.getTask(taskId)
+          if (task) {
+            console.log('📥 重新加载任务数据:', task)
+            // 这里需要触发父组件重新获取任务数据
+            // 由于这是子组件，我们需要通过回调通知父组件
+            if (onTaskUpdate) {
+              onTaskUpdate(taskId, task)
+            }
+          }
+        }
+      }
+    }
+    
     window.addEventListener('download:enqueued' as any, onEnqueued as any)
     window.addEventListener('download:done' as any, onDone as any)
     window.addEventListener('download:error' as any, onError as any)
+    window.addEventListener('download:complete' as any, onDownloadComplete as any)
     return () => {
       window.removeEventListener('download:enqueued' as any, onEnqueued as any)
       window.removeEventListener('download:done' as any, onDone as any)
       window.removeEventListener('download:error' as any, onError as any)
+      window.removeEventListener('download:complete' as any, onDownloadComplete as any)
     }
   }, [])
 
@@ -226,12 +299,14 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
         return <Clock className="h-4 w-4 text-yellow-500" />
       case BatchTaskStatus.PROCESSING:
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+      case BatchTaskStatus.PAUSED:
+        return <Pause className="h-4 w-4 text-orange-500" />
       case BatchTaskStatus.COMPLETED:
         return <CheckCircle className="h-4 w-4 text-green-500" />
       case BatchTaskStatus.FAILED:
         return <AlertCircle className="h-4 w-4 text-red-500" />
       case BatchTaskStatus.CANCELLED:
-        return <Pause className="h-4 w-4 text-gray-500" />
+        return <Square className="h-4 w-4 text-gray-500" />
       default:
         return <Clock className="h-4 w-4 text-gray-500" />
     }
@@ -241,6 +316,7 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
     const variants = {
       [BatchTaskStatus.PENDING]: 'secondary',
       [BatchTaskStatus.PROCESSING]: 'default',
+      [BatchTaskStatus.PAUSED]: 'outline',
       [BatchTaskStatus.COMPLETED]: 'default',
       [BatchTaskStatus.FAILED]: 'destructive',
       [BatchTaskStatus.CANCELLED]: 'outline'
@@ -249,6 +325,7 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
     const labels = {
       [BatchTaskStatus.PENDING]: '等待中',
       [BatchTaskStatus.PROCESSING]: '处理中',
+      [BatchTaskStatus.PAUSED]: '已暂停',
       [BatchTaskStatus.COMPLETED]: '已完成',
       [BatchTaskStatus.FAILED]: '失败',
       [BatchTaskStatus.CANCELLED]: '已取消'
@@ -284,6 +361,21 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
     }
   }
 
+  const handlePauseTask = (taskId: string) => {
+    batchTaskManager.pauseTask(taskId)
+    toast.success('任务已暂停')
+  }
+
+  const handleResumeTask = async (taskId: string) => {
+    try {
+      await batchTaskManager.resumeTask(taskId)
+      toast.success('任务已恢复')
+    } catch (error) {
+      console.error('恢复任务失败:', error)
+      toast.error(`恢复任务失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    }
+  }
+
   const handleStopTask = (taskId: string) => {
     batchTaskManager.stopTask(taskId)
     toast.success('任务已停止')
@@ -292,11 +384,11 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
   const handleDeleteTask = async (taskId: string) => {
     try {
       console.log('[UI] start delete flow', { taskId })
-      // 先停止任务（如果正在运行）
+      // 先停止任务（如果正在运行或暂停）
       const task = batchTaskManager.getTask(taskId)
       console.log('[UI] current task snapshot', { task })
-      if (task && task.status === BatchTaskStatus.PROCESSING) {
-        console.log('[UI] task processing, stopping...', { taskId })
+      if (task && (task.status === BatchTaskStatus.PROCESSING || task.status === BatchTaskStatus.PAUSED)) {
+        console.log('[UI] task processing/paused, stopping...', { taskId })
         batchTaskManager.stopTask(taskId)
       }
       
@@ -475,7 +567,7 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
                   <Progress value={task.progress} className="h-2" />
                 </div>
 
-                {task.status === BatchTaskStatus.PROCESSING && task.startedAt && (
+                {(task.status === BatchTaskStatus.PROCESSING || task.status === BatchTaskStatus.PAUSED) && task.startedAt && (
                   <div className="text-sm text-gray-500">
                     运行时间: {formatDuration(task.startedAt)}
                   </div>
@@ -494,15 +586,48 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
                   )}
 
                   {task.status === BatchTaskStatus.PROCESSING && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleStopTask(task.id)}
-                      className="flex-1"
-                    >
-                      <Pause className="h-4 w-4 mr-1" />
-                      停止
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePauseTask(task.id)}
+                        className="flex-1"
+                      >
+                        <Pause className="h-4 w-4 mr-1" />
+                        暂停
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleStopTask(task.id)}
+                        className="flex-1"
+                      >
+                        <Square className="h-4 w-4 mr-1" />
+                        停止
+                      </Button>
+                    </>
+                  )}
+
+                  {task.status === BatchTaskStatus.PAUSED && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => handleResumeTask(task.id)}
+                        className="flex-1"
+                      >
+                        <Play className="h-4 w-4 mr-1" />
+                        恢复
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleStopTask(task.id)}
+                        className="flex-1"
+                      >
+                        <Square className="h-4 w-4 mr-1" />
+                        停止
+                      </Button>
+                    </>
                   )}
 
                   {task.failedItems > 0 && (
@@ -660,6 +785,28 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
                                    item.status === BatchTaskStatus.FAILED ? '失败' :
                                    item.status === BatchTaskStatus.PROCESSING ? '处理中' : '等待中'}
                                 </Badge>
+                                
+                                {/* 重试按钮 - 只对失败的任务项显示 */}
+                                {item.status === BatchTaskStatus.FAILED && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={async () => {
+                                      try {
+                                        await batchTaskManager.retryTaskItem(selectedTask.id, item.id)
+                                        toast.success('已重新开始执行该任务项')
+                                      } catch (error) {
+                                        console.error('重试任务项失败:', error)
+                                        toast.error('重试任务项失败')
+                                      }
+                                    }}
+                                  >
+                                    <RefreshCcw className="h-3 w-3 mr-1" />
+                                    重试
+                                  </Button>
+                                )}
+                                
                                 {(latestRequest || latestResponse || latestError) && (
                                   <Button
                                     variant="outline"
@@ -719,6 +866,42 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
                           </Button>
                         )}
                         
+                        {/* 任务重试 - 重试全部任务 */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await batchTaskManager.retryTask(selectedTask.id)
+                              toast.success('已重新开始执行任务')
+                            } catch (error) {
+                              console.error('重试任务失败:', error)
+                              toast.error('重试任务失败')
+                            }
+                          }}
+                        >
+                          <RefreshCcw className="h-3 w-3 mr-1" />
+                          重试全部任务
+                        </Button>
+
+                        {/* 任务重试 - 重试失败任务 */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await batchTaskManager.retryFailedItems(selectedTask.id)
+                              toast.success('已重新开始执行失败的任务')
+                            } catch (error) {
+                              console.error('重试失败任务失败:', error)
+                              toast.error('重试失败任务失败')
+                            }
+                          }}
+                        >
+                          <RefreshCcw className="h-3 w-3 mr-1" />
+                          重试失败任务
+                        </Button>
+
                         {/* 下载重试 - 重新下载失败的任务 */}
                         <Button
                           variant="outline"
@@ -740,12 +923,17 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
+                          onClick={async () => {
                             const allResults = selectedTask.results.filter(r => r.imageUrl)
                             if (allResults.length > 0) {
-                              downloadService.downloadBatchImages(allResults, selectedTask.name, {
-                                showToast: true
-                              })
+                              try {
+                                await downloadService.downloadBatchImages(allResults, selectedTask.name, {
+                                  showToast: true
+                                })
+                              } catch (error) {
+                                console.error('批量下载失败:', error)
+                                toast.error('批量下载失败')
+                              }
                             }
                           }}
                         >
@@ -756,71 +944,72 @@ export function BatchTaskList({ tasks, onTaskUpdate, onTaskDelete, onTaskEdit }:
                     </div>
                     <div className="max-h-80 overflow-y-auto pl-2">
                       <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
-                        {selectedTask.results.map((result) => {
+                        {selectedTask.results.map((result, index) => {
                           const prog = dlProgress[result.imageUrl]
                           const progress = prog?.progress ?? (result.downloaded ? 1 : 0)
                           const isDownloading = manualDownloading.has(result.imageUrl) || (prog !== undefined && progress < 1)
                           const hasLocalPath = result.localPath && result.localPath.length > 0
+                          
+                          // 添加详细的调试日志
+                          console.log(`🖼️ 图片 ${index + 1} 渲染信息:`, {
+                            id: result.id,
+                            imageUrl: result.imageUrl,
+                            localPath: result.localPath,
+                            downloaded: result.downloaded,
+                            hasLocalPath,
+                            willShowLocal: hasLocalPath
+                          })
                           
                           return (
                             <div
                               key={result.id}
                               className="group relative w-20 h-20 md:w-24 md:h-24 rounded-md overflow-hidden ring-1 ring-gray-200"
                               onDoubleClick={() => {
+  console.log(`🖱️ 双击图片预览:`, {
+    hasLocalPath,
+    localPath: result.localPath,
+    imageUrl: result.imageUrl
+  })
+  
   if (hasLocalPath) {
-    // 优先使用缓存，如果没有则读取文件
-    if (localImageCache[result.localPath!]) {
-      setPreviewImage(localImageCache[result.localPath!])
-    } else {
-      // 异步读取文件
-      readLocalFile(result.localPath!).then(dataUrl => {
-        setLocalImageCache(prev => ({ ...prev, [result.localPath!]: dataUrl }))
-        setPreviewImage(dataUrl)
-      }).catch((error) => {
-        console.error('读取本地文件失败，回退到网络图片:', error)
-        // 如果读取失败，回退到网络图片
-        setPreviewImage(result.imageUrl)
-      })
-    }
+    // 直接使用本地文件路径
+    console.log(`📱 使用本地文件预览: ${result.localPath}`)
+    setPreviewImage(result.localPath!)
   } else {
+    console.log(`🌐 使用网络图片预览: ${result.imageUrl}`)
     setPreviewImage(result.imageUrl)
   }
 }}
                             >
                               {hasLocalPath ? (
-                                localImageCache[result.localPath!] ? (
-                                  <img 
-                                    src={localImageCache[result.localPath!]} 
-                                    alt="生成结果" 
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                                    <div className="text-center">
-                                      <Loader2 className="h-6 w-6 animate-spin mx-auto mb-1 text-gray-400" />
-                                      <span className="text-xs text-gray-500">加载中...</span>
-                                    </div>
-                                  </div>
-                                )
-                              ) : (
-                                <Image 
-                                  src={result.imageUrl} 
-                                  alt="生成结果" 
-                                  fill 
-                                  className="object-cover"
-                                  onError={(e) => {
-                                    console.error('Failed to load remote image:', result.imageUrl)
-                                    const img = e.target as HTMLImageElement
-                                    img.style.display = 'none'
-                                    const parent = img.parentElement
-                                    if (parent) {
-                                      const fallback = document.createElement('div')
-                                      fallback.className = 'w-full h-full bg-gray-200 flex items-center justify-center text-gray-400 text-xs'
-                                      fallback.textContent = '加载失败'
-                                      parent.appendChild(fallback)
-                                    }
-                                  }}
+                                <LocalImage 
+                                  localPath={result.localPath!} 
+                                  fallbackUrl={result.imageUrl}
                                 />
+                              ) : (
+                                (() => {
+                                  console.log(`🌐 显示网络图片: ${result.imageUrl}`)
+                                  return (
+                                    <Image 
+                                      src={result.imageUrl} 
+                                      alt="生成结果" 
+                                      fill 
+                                      className="object-cover"
+                                      onError={(e) => {
+                                        console.error('Failed to load remote image:', result.imageUrl)
+                                        const img = e.target as HTMLImageElement
+                                        img.style.display = 'none'
+                                        const parent = img.parentElement
+                                        if (parent) {
+                                          const fallback = document.createElement('div')
+                                          fallback.className = 'w-full h-full bg-gray-200 flex items-center justify-center text-gray-400 text-xs'
+                                          fallback.textContent = '加载失败'
+                                          parent.appendChild(fallback)
+                                        }
+                                      }}
+                                    />
+                                  )
+                                })()
                               )}
 
                               {/* 下载进度遮罩：自上而下露出 */}
