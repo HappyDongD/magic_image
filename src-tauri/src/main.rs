@@ -130,7 +130,7 @@ fn get_download_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn download_file(url: String, filename: String, dir: Option<String>, app_handle: tauri::AppHandle) -> Result<String, String> {
+async fn download_file(url: String, filename: String, dir: Option<String>, app_handle: tauri::AppHandle) -> Result<String, String> {
     let save_dir = match dir {
         Some(d) if !d.is_empty() => PathBuf::from(d),
         _ => app_handle
@@ -148,8 +148,8 @@ fn download_file(url: String, filename: String, dir: Option<String>, app_handle:
         }
     }
 
-    // HTTP 客户端，设置 UA/Referer 与超时
-    let client = reqwest::blocking::Client::builder()
+    // HTTP 客户端，使用异步客户端避免阻塞
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36")
         .build()
@@ -164,7 +164,7 @@ fn download_file(url: String, filename: String, dir: Option<String>, app_handle:
             .build()
             .map_err(|e| format!("构建请求失败: {}", e))?;
 
-        match client.execute(req) {
+        match client.execute(req).await {
             Ok(mut resp) => {
                 if !resp.status().is_success() {
                     last_err = Some(format!("HTTP {}", resp.status()));
@@ -178,41 +178,43 @@ fn download_file(url: String, filename: String, dir: Option<String>, app_handle:
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(0);
 
-                let mut file = match File::create(&save_path) {
-                    Ok(f) => f,
-                    Err(e) => return Err(format!("创建文件失败: {}", e)),
-                };
-
                 let mut downloaded: u64 = 0;
-                let mut buffer = [0u8; 64 * 1024];
                 let start = Instant::now();
+                
+                // 使用异步流读取，避免阻塞
+                use tokio::io::AsyncWriteExt;
+                let mut async_file = tokio::fs::File::create(&save_path).await
+                    .map_err(|e| format!("创建异步文件失败: {}", e))?;
+                
                 loop {
-                    let n = match resp.read(&mut buffer) {
-                        Ok(0) => break,
-                        Ok(n) => n,
+                    match resp.chunk().await {
+                        Ok(Some(chunk)) => {
+                            let chunk_size = chunk.len();
+                            if let Err(e) = async_file.write_all(&chunk).await {
+                                return Err(format!("写入文件失败: {}", e));
+                            }
+                            downloaded += chunk_size as u64;
+
+                            // 上报进度
+                            let elapsed = start.elapsed().as_secs_f64();
+                            let speed = if elapsed > 0.0 { (downloaded as f64 / elapsed) as u64 } else { 0 };
+                            let _ = app_handle.emit(
+                                "download:progress",
+                                serde_json::json!({
+                                    "url": url,
+                                    "path": save_path.to_string_lossy(),
+                                    "downloaded": downloaded,
+                                    "total": total,
+                                    "bytesPerSec": speed,
+                                }),
+                            );
+                        }
+                        Ok(None) => break,
                         Err(e) => {
                             let _ = last_err.insert(format!("读取流失败: {}", e));
                             break;
                         }
-                    };
-                    if let Err(e) = file.write_all(&buffer[..n]) {
-                        return Err(format!("写入文件失败: {}", e));
                     }
-                    downloaded += n as u64;
-
-                    // 上报进度
-                    let elapsed = start.elapsed().as_secs_f64();
-                    let speed = if elapsed > 0.0 { (downloaded as f64 / elapsed) as u64 } else { 0 };
-                    let _ = app_handle.emit(
-                        "download:progress",
-                        serde_json::json!({
-                            "url": url,
-                            "path": save_path.to_string_lossy(),
-                            "downloaded": downloaded,
-                            "total": total,
-                            "bytesPerSec": speed,
-                        }),
-                    );
                 }
 
                 // 成功
@@ -220,7 +222,7 @@ fn download_file(url: String, filename: String, dir: Option<String>, app_handle:
             }
             Err(e) => {
                 last_err = Some(format!("请求失败: {}", e));
-                std::thread::sleep(Duration::from_millis(300 * (attempt + 1) as u64));
+                tokio::time::sleep(Duration::from_millis(300 * (attempt + 1) as u64)).await;
                 continue;
             }
         }
@@ -313,6 +315,16 @@ async fn cleanup_old_tasks(app_handle: tauri::AppHandle, max_tasks_to_keep: Opti
         .map_err(|e| format!("清理旧任务失败: {}", e))
 }
 
+#[tauri::command]
+async fn update_task_result(app_handle: tauri::AppHandle, result_id: String, local_path: String) -> Result<bool, String> {
+    // 初始化数据库
+    simple_database::SimpleDatabase::init_db(&app_handle).await?;
+    
+    simple_database::SimpleDatabase::update_task_result(&app_handle, &result_id, &local_path)
+        .await
+        .map_err(|e| format!("更新任务结果失败: {}", e))
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -325,7 +337,8 @@ fn main() {
             delete_batch_task,
             clear_batch_tasks,
             get_task_count,
-            cleanup_old_tasks
+            cleanup_old_tasks,
+            update_task_result
         ])
         .setup(|_app| {
             #[cfg(debug_assertions)]

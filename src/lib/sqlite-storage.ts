@@ -1,5 +1,14 @@
-import { invoke } from '@tauri-apps/api/core';
 import { BatchTask, BatchTaskStatus, TaskType, CustomModel, ModelConfig, DownloadConfig, GeneratedImage, ApiConfig } from '@/types';
+
+// 安全地导入Tauri API
+let invoke: any = null;
+if (typeof window !== 'undefined') {
+  try {
+    invoke = require('@tauri-apps/api/core').invoke;
+  } catch (error) {
+    console.warn('Tauri API not available, using localStorage fallback');
+  }
+}
 
 export interface SQLiteStorage {
   // 批量任务相关操作
@@ -11,6 +20,9 @@ export interface SQLiteStorage {
   // 存储管理
   getTaskCount(): Promise<number>;
   cleanupOldTasks(maxTasksToKeep?: number): Promise<number>;
+  
+  // 批量更新操作 - 优化性能
+  updateTaskResult(resultId: string, localPath: string): Promise<boolean>;
 }
 
 // SQLite 存储实现
@@ -20,11 +32,30 @@ export const sqliteStorage: SQLiteStorage = {
     if (typeof window === 'undefined') {
       return []; // SSR环境返回空数组
     }
+    
+    // 如果没有Tauri API，使用localStorage作为fallback
+    if (!invoke) {
+      try {
+        const stored = localStorage.getItem('batch_tasks');
+        return stored ? JSON.parse(stored) : [];
+      } catch (error) {
+        console.error('从localStorage获取批量任务失败:', error);
+        return [];
+      }
+    }
+    
     try {
       return await invoke('get_batch_tasks');
     } catch (error) {
       console.error('获取批量任务失败:', error);
-      return [];
+      // 尝试从localStorage获取
+      try {
+        const stored = localStorage.getItem('batch_tasks');
+        return stored ? JSON.parse(stored) : [];
+      } catch (fallbackError) {
+        console.error('localStorage fallback也失败:', fallbackError);
+        return [];
+      }
     }
   },
 
@@ -33,6 +64,26 @@ export const sqliteStorage: SQLiteStorage = {
     if (typeof window === 'undefined') {
       return; // SSR环境直接返回
     }
+    
+    // 如果没有Tauri API，使用localStorage作为fallback
+    if (!invoke) {
+      try {
+        const existing = localStorage.getItem('batch_tasks');
+        const tasks = existing ? JSON.parse(existing) : [];
+        const index = tasks.findIndex((t: BatchTask) => t.id === task.id);
+        if (index >= 0) {
+          tasks[index] = task;
+        } else {
+          tasks.push(task);
+        }
+        localStorage.setItem('batch_tasks', JSON.stringify(tasks));
+        return;
+      } catch (error) {
+        console.error('保存到localStorage失败:', error);
+        throw new Error(`保存任务失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      }
+    }
+    
     try {
       await invoke('save_batch_task', { task });
     } catch (error) {
@@ -90,6 +141,50 @@ export const sqliteStorage: SQLiteStorage = {
     } catch (error) {
       console.error('清理旧任务失败:', error);
       throw new Error(`清理任务失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  },
+
+  // 批量更新任务结果 - 优化性能，减少数据库访问
+  async updateTaskResult(resultId: string, localPath: string): Promise<boolean> {
+    if (typeof window === 'undefined') {
+      return false; // SSR环境返回false
+    }
+    
+    // 如果没有Tauri API，使用localStorage作为fallback
+    if (!invoke) {
+      try {
+        const stored = localStorage.getItem('batch_tasks');
+        if (!stored) return false;
+        
+        const tasks = JSON.parse(stored);
+        let updated = false;
+        
+        for (const task of tasks) {
+          const result = task.results.find((r: any) => r.id === resultId);
+          if (result) {
+            result.localPath = localPath;
+            result.downloaded = true;
+            updated = true;
+            break;
+          }
+        }
+        
+        if (updated) {
+          localStorage.setItem('batch_tasks', JSON.stringify(tasks));
+        }
+        
+        return updated;
+      } catch (error) {
+        console.error('更新localStorage失败:', error);
+        return false;
+      }
+    }
+    
+    try {
+      return await invoke('update_task_result', { resultId, localPath });
+    } catch (error) {
+      console.error('更新任务结果失败:', error);
+      return false;
     }
   }
 };

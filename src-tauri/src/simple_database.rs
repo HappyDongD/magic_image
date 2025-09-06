@@ -209,4 +209,53 @@ impl SimpleDatabase {
         
         Ok(count)
     }
+
+    // 批量更新任务结果 - 高效更新单个结果
+    pub async fn update_task_result(app_handle: &AppHandle, result_id: &str, local_path: &str) -> Result<bool, String> {
+        let conn = Self::get_connection(app_handle)?;
+        
+        // 查询包含该结果的任务
+        let mut stmt = conn.prepare(
+            "SELECT id, results_json FROM batch_tasks WHERE results_json LIKE ?"
+        ).map_err(|e| format!("准备查询失败: {}", e))?;
+        
+        let search_pattern = format!("%\"id\":\"{}\"%", result_id);
+        let mut rows = stmt.query_map([search_pattern], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| format!("查询任务失败: {}", e))?;
+        
+        while let Some(row) = rows.next() {
+            let (task_id, results_json): (String, String) = row.map_err(|e| format!("读取行失败: {}", e))?;
+            
+            // 解析结果JSON
+            let mut results: Vec<crate::TaskResult> = serde_json::from_str(&results_json)
+                .map_err(|e| format!("解析结果JSON失败: {}", e))?;
+            
+            // 查找并更新匹配的结果
+            let mut updated = false;
+            for result in &mut results {
+                if result.id == result_id {
+                    result.local_path = Some(local_path.to_string());
+                    result.downloaded = true;
+                    updated = true;
+                    break;
+                }
+            }
+            
+            if updated {
+                // 更新数据库
+                let updated_json = serde_json::to_string(&results)
+                    .map_err(|e| format!("序列化结果失败: {}", e))?;
+                
+                conn.execute(
+                    "UPDATE batch_tasks SET results_json = ? WHERE id = ?",
+                    params![updated_json, task_id],
+                ).map_err(|e| format!("更新任务失败: {}", e))?;
+                
+                return Ok(true);
+            }
+        }
+        
+        Ok(false)
+    }
 }
