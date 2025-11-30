@@ -8,12 +8,14 @@ import { Info, Download, Edit, Settings, History, Image as ImageIcon, MessageSqu
 import Image from "next/image"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
 import { HistoryDialog } from "@/components/history-dialog"
-import { useState, useRef, useEffect, Suspense } from "react"
+import { useState, useRef, useEffect, Suspense, useCallback } from "react"
 import { api } from "@/lib/api"
-import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType } from "@/types"
+import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType, CustomModel } from "@/types"
 import { storage } from "@/lib/storage"
 import { v4 as uuidv4 } from 'uuid'
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import confetti from 'canvas-confetti'
+import { downloadImageToBase64 } from "@/lib/utils"
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { MaskEditor } from "@/components/mask-editor"
 import { useSearchParams } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
@@ -46,9 +48,11 @@ function HomeContent() {
   const [isImageToImage, setIsImageToImage] = useState(false)
   const [sourceImages, setSourceImages] = useState<string[]>([])
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1")
+  const [customAspectRatio, setCustomAspectRatio] = useState("")
   const [size, setSize] = useState<ImageSize>("1024x1024")
   const [n, setN] = useState(1)
-  const [quality, setQuality] = useState<'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard'>('auto')
+  const [quality, setQuality] = useState<'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard' | '1K' | '2K' | '4K'>('auto')
+  const [customModels, setCustomModels] = useState<CustomModel[]>([])
   const contentRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showMaskEditor, setShowMaskEditor] = useState(false)
@@ -57,52 +61,74 @@ function HomeContent() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const searchParams = useSearchParams()
 
+  const loadCustomModels = useCallback(async () => {
+    const models = await storage.getCustomModels()
+    setCustomModels(models)
+  }, [])
+
   useEffect(() => {
-    const url = searchParams.get('url')
-    const apiKey = searchParams.get('apikey')
-    
-    if (url && apiKey) {
-      // 解码 URL 参数
-      const decodedUrl = decodeURIComponent(url)
-      const decodedApiKey = decodeURIComponent(apiKey)
-      storage.setApiConfig(decodedApiKey, decodedUrl)
+    let active = true
+
+    const syncConfig = async () => {
+      const url = searchParams.get('url')
+      const apiKey = searchParams.get('apikey')
+      
+      if (url && apiKey) {
+        const decodedUrl = decodeURIComponent(url)
+        const decodedApiKey = decodeURIComponent(apiKey)
+        await storage.setApiConfig(decodedApiKey, decodedUrl)
+      }
+
+      const savedConfig = await storage.getApiConfig()
+      if (!active) return
+
+      if (savedConfig && savedConfig.baseUrl && savedConfig.baseUrl.startsWith('http:')) {
+        const secureUrl = savedConfig.baseUrl.replace('http:', 'https:')
+        await storage.setApiConfig(savedConfig.key, secureUrl)
+        if (active) {
+          console.log('API URL upgraded to HTTPS:', secureUrl)
+        }
+      }
     }
 
-    // 检查并修复存储的API URL，确保使用HTTPS
-    const storedConfig = storage.getApiConfig()
-    if (storedConfig && storedConfig.baseUrl && storedConfig.baseUrl.startsWith('http:')) {
-      const secureUrl = storedConfig.baseUrl.replace('http:', 'https:')
-      storage.setApiConfig(storedConfig.key, secureUrl)
-      console.log('API URL已自动升级到HTTPS:', secureUrl)
+    syncConfig()
+
+    return () => {
+      active = false
     }
   }, [searchParams])
 
-  // 监听模型变化，自动设置正确的模型类型（优先使用自定义模型的明确类型）
   useEffect(() => {
-    // 1) 自定义模型优先：若匹配到自定义模型，则以其类型为准
-    const customModels = storage.getCustomModels()
+    loadCustomModels()
+  }, [loadCustomModels])
+
+  useEffect(() => {
+    if (!showCustomModelDialog) {
+      loadCustomModels()
+    }
+  }, [showCustomModelDialog, loadCustomModels])
+
+  useEffect(() => {
     const customModel = customModels.find(cm => cm.value === model)
     if (customModel) {
       setModelType(customModel.type)
       return
     }
 
-    // 2) 内置模型
     if (model === 'dall-e-3' || model === 'gpt-image-1') {
       setModelType(ModelType.DALLE)
       return
     }
-    if (model === 'sora_image' || model === 'gpt_4o_image') {
+    if (model === 'sora_image') {
       setModelType(ModelType.OPENAI)
       return
     }
 
-    // 3) 启发式（仅当既不是自定义也不是内置时）
     if (typeof model === 'string' && model.startsWith('gemini')) {
       setModelType(ModelType.GEMINI)
       return
     }
-  }, [model])
+  }, [model, customModels])
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
@@ -165,22 +191,28 @@ function HomeContent() {
 
     try {
       const isDalleModel = model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE
-             const isGeminiModel = modelType === ModelType.GEMINI
-      
+      const isGeminiModel = modelType === ModelType.GEMINI
+
       // 如果有多张源图片，将它们的信息添加到提示词中
       let enhancedPrompt = prompt.trim();
       if (sourceImages.length > 1) {
         enhancedPrompt += `\n\n参考图片信息：上传了${sourceImages.length}张参考图片，第一张作为主要参考，其他图片作为额外参考。`;
       }
-      
-      const finalPrompt = isDalleModel || isGeminiModel ? enhancedPrompt : `${enhancedPrompt}\n图片生成比例为：${aspectRatio}`
-      
+
+      // 处理 Gemini 的自定义宽高比
+      let finalAspectRatio = aspectRatio
+      if (isGeminiModel && aspectRatio === 'custom' as any) {
+        finalAspectRatio = customAspectRatio
+      }
+
+      const finalPrompt = isDalleModel || isGeminiModel ? enhancedPrompt : `${enhancedPrompt}\n图片生成比例为：${finalAspectRatio}`
+
       if (isDalleModel) {
         if (isImageToImage) {
           if (sourceImages.length === 0) {
             throw new Error('请先上传图片')
           }
-          
+
           try {
             // DALL-E API仅支持使用第一张图片进行编辑
             // 注意: 对于generateStreamImage方法，我们已添加对多图片的支持
@@ -194,7 +226,7 @@ function HomeContent() {
               mask: maskImage || undefined,
               quality
             })
-            
+
             const imageUrls = response.data.map(item => {
               // 处理DALL-E返回的URL或base64图片
               const imageUrl = item.url || item.b64_json;
@@ -204,9 +236,9 @@ function HomeContent() {
               }
               return imageUrl || ''; // 添加空字符串作为默认值
             }).filter(url => url !== ''); // 过滤掉空链接
-            
+
             setGeneratedImages(imageUrls)
-            
+
             if (imageUrls.length > 0) {
               storage.addToHistory({
                 id: uuidv4(),
@@ -216,6 +248,12 @@ function HomeContent() {
                 createdAt: new Date().toISOString(),
                 aspectRatio: '1:1'
               })
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+              });
+              toast.success("生成成功！")
             }
           } catch (err) {
             if (err instanceof Error) {
@@ -233,7 +271,7 @@ function HomeContent() {
               n,
               quality
             })
-            
+
             const imageUrls = response.data.map(item => {
               // 处理DALL-E返回的URL或base64图片
               const imageUrl = item.url || item.b64_json;
@@ -243,9 +281,9 @@ function HomeContent() {
               }
               return imageUrl || ''; // 添加空字符串作为默认值
             }).filter(url => url !== ''); // 过滤掉空链接
-            
+
             setGeneratedImages(imageUrls)
-            
+
             if (imageUrls.length > 0) {
               storage.addToHistory({
                 id: uuidv4(),
@@ -255,6 +293,12 @@ function HomeContent() {
                 createdAt: new Date().toISOString(),
                 aspectRatio: '1:1'
               })
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+              });
+              toast.success("生成成功！")
             }
           } catch (err) {
             if (err instanceof Error) {
@@ -269,7 +313,7 @@ function HomeContent() {
           if (sourceImages.length === 0) {
             throw new Error('请先上传图片')
           }
-          
+
           try {
             // 使用 Gemini 的图生图接口
             const response = await api.editGeminiImage({
@@ -277,12 +321,12 @@ function HomeContent() {
               model,
               modelType,
               sourceImage: sourceImages[0],
-              size,
-              n,
+              // Gemini 不使用 size 和 n 参数
               mask: maskImage || undefined,
-              quality
+              quality,
+              aspectRatio: finalAspectRatio
             })
-            
+
             const imageUrls = response.data.map(item => {
               // 处理 Gemini 返回的 base64 图片
               const imageUrl = item.url || item.b64_json;
@@ -292,9 +336,9 @@ function HomeContent() {
               }
               return imageUrl || ''; // 添加空字符串作为默认值
             }).filter(url => url !== ''); // 过滤掉空链接
-            
+
             setGeneratedImages(imageUrls)
-            
+
             if (imageUrls.length > 0) {
               storage.addToHistory({
                 id: uuidv4(),
@@ -304,6 +348,12 @@ function HomeContent() {
                 createdAt: new Date().toISOString(),
                 aspectRatio: '1:1'
               })
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+              });
+              toast.success("生成成功！")
             }
           } catch (err) {
             if (err instanceof Error) {
@@ -318,11 +368,11 @@ function HomeContent() {
             const response = await api.generateGeminiImage({
               prompt: finalPrompt,
               model,
-              size,
-              n,
-              quality
+              // Gemini 不使用 size 和 n 参数
+              quality,
+              aspectRatio: finalAspectRatio
             })
-            
+
             const imageUrls = response.data.map(item => {
               // 处理 Gemini 返回的 base64 图片
               const imageUrl = item.url || item.b64_json;
@@ -332,9 +382,9 @@ function HomeContent() {
               }
               return imageUrl || ''; // 添加空字符串作为默认值
             }).filter(url => url !== ''); // 过滤掉空链接
-            
+
             setGeneratedImages(imageUrls)
-            
+
             if (imageUrls.length > 0) {
               storage.addToHistory({
                 id: uuidv4(),
@@ -344,6 +394,12 @@ function HomeContent() {
                 createdAt: new Date().toISOString(),
                 aspectRatio: '1:1'
               })
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+              });
+              toast.success("生成成功！")
             }
           } catch (err) {
             if (err instanceof Error) {
@@ -381,6 +437,12 @@ function HomeContent() {
                 createdAt: new Date().toISOString(),
                 aspectRatio
               })
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+              });
+              toast.success("生成成功！")
             },
             onError: (error) => {
               // 处理流式 API 错误
@@ -409,6 +471,7 @@ function HomeContent() {
     setSourceImages([])
     setMaskImage(null)
     setAspectRatio("1:1")
+    setCustomAspectRatio("")
     setSize("1024x1024")
     setN(1)
     setCurrentImageIndex(0)
@@ -429,19 +492,30 @@ function HomeContent() {
     }
   }
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (generatedImages[currentImageIndex]) {
       const imageUrl = generatedImages[currentImageIndex];
-      const link = document.createElement('a');
-      link.href = imageUrl;
+      let downloadUrl = imageUrl;
       
+      // Try to convert to base64 if it's a remote URL to avoid CORS issues
+      if (!isBase64Image(imageUrl)) {
+        try {
+          downloadUrl = await downloadImageToBase64(imageUrl);
+        } catch (e) {
+          console.error("Failed to convert image to base64, falling back to original URL", e);
+        }
+      }
+
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+
       // 为base64图片设置合适的文件名
-      if (isBase64Image(imageUrl)) {
+      if (isBase64Image(downloadUrl)) {
         link.download = `generated-image-${Date.now()}.png`;
       } else {
         link.download = 'generated-image.png';
       }
-      
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -468,8 +542,8 @@ function HomeContent() {
           variant="ghost"
           size="sm"
           className="absolute right-14 top-1/2 -translate-y-1/2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full p-2"
-          onClick={() => window.open('https://mj.do', '_blank')}
-          title="访问 mj.do"
+          onClick={() => window.open('https://magic666.top', '_blank')}
+          title="访问 magic666.top"
         >
           <Globe className="h-5 w-5" />
         </Button>
@@ -481,23 +555,23 @@ function HomeContent() {
         <p className="text-gray-500 mt-2">通过简单的文字描述，创造精美的AI艺术作品</p>
       </div>
 
-      <div className="container mx-auto px-4 pb-8 max-w-[1200px]">
-        <div className="grid grid-cols-[300px_1fr] gap-6">
+      <div className="container mx-auto px-4 pb-8 max-w-[1500px]">
+        <div className="grid grid-cols-[300px_1fr_280px] gap-6">
           {/* 左侧控制面板 */}
           <div className="space-y-6">
-            <Card className="sticky top-4">
+            <Card className="top-4">
               <CardContent className="p-4 space-y-4">
                 <div className="flex items-center gap-4">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => setShowApiKeyDialog(true)}
                   >
                     <Settings className="h-4 w-4 mr-2" />
                     密钥设置
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => setShowHistoryDialog(true)}
                   >
@@ -509,15 +583,15 @@ function HomeContent() {
                 <div className="space-y-2">
                   <h3 className="font-medium">生成模式</h3>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button 
-                      variant={isImageToImage ? "outline" : "secondary"} 
+                    <Button
+                      variant={isImageToImage ? "outline" : "secondary"}
                       className="w-full"
                       onClick={() => setIsImageToImage(false)}
                     >
                       <MessageSquare className="h-4 w-4 mr-2" />
                       文生图
                     </Button>
-                    <Button 
+                    <Button
                       variant={isImageToImage ? "secondary" : "outline"}
                       className="w-full"
                       onClick={() => setIsImageToImage(true)}
@@ -531,7 +605,7 @@ function HomeContent() {
                 {isImageToImage && (
                   <div className="space-y-2">
                     <h3 className="font-medium">上传图片进行编辑</h3>
-                    <div 
+                    <div
                       className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
                       onClick={() => fileInputRef.current?.click()}
                     >
@@ -584,7 +658,7 @@ function HomeContent() {
                   </div>
                 )}
 
-                {isImageToImage && sourceImages.length > 0 && (model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE || model === 'gemini-2.5-flash-image-preview' || modelType === ModelType.GEMINI) && (
+                {isImageToImage && sourceImages.length > 0 && (model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE || model === 'gemini-2.5-flash-image-preview' || model === 'gemini-3-pro-image-preview' || modelType === ModelType.GEMINI) && (
                   <Button
                     variant="outline"
                     className="w-full"
@@ -599,7 +673,7 @@ function HomeContent() {
 
                 <div className="space-y-2">
                   <h3 className="font-medium">提示词</h3>
-                  <Textarea 
+                  <Textarea
                     placeholder="描述你想要生成的图像，例如：一只可爱的猫咪，柔软的毛发，大眼睛，阳光下微笑..."
                     className="min-h-[120px]"
                     value={prompt}
@@ -610,8 +684,8 @@ function HomeContent() {
                 <div className="space-y-2">
                   <h3 className="font-medium">模型选择</h3>
                   <div className="flex gap-2 mb-2">
-                    <Select 
-                      value={(storage.getCustomModels().some(cm => cm.value === model && cm.type === modelType)) ? `${modelType}::${model}` : model}
+                    <Select
+                      value={(customModels.some(cm => cm.value === model && cm.type === modelType)) ? `${modelType}::${model}` : model}
                       onValueChange={(value: string) => {
                         if (typeof value === 'string' && value.includes('::')) {
                           const [typeStr, modelVal] = value.split('::')
@@ -626,21 +700,20 @@ function HomeContent() {
                         <SelectValue placeholder="选择生成模型" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="sora_image">GPT Sora_Image 模型</SelectItem>
-                        <SelectItem value="gpt_4o_image">GPT 4o_Image 模型</SelectItem>
-                        <SelectItem value="gpt-image-1">GPT Image 1 模型</SelectItem>
-                        <SelectItem value="dall-e-3">DALL-E 3 模型</SelectItem>
-                        <SelectItem value="gemini-2.5-flash-image-preview">Gemini 2.5 模型</SelectItem>
-                        
+                        <SelectItem value="gemini-3-pro-image-preview">Banana Pro 生图</SelectItem>
+                        <SelectItem value="gemini-2.5-flash-image-preview">Banana 生图</SelectItem>
+                        <SelectItem value="sora_image">Sora 生图</SelectItem>
+
+
                         {/* 显示自定义模型 */}
-                        {storage.getCustomModels().length > 0 && (
+                        {customModels.length > 0 && (
                           <>
                             <SelectItem value="divider" disabled>
                               ──── 自定义模型 ────
                             </SelectItem>
-                            {storage.getCustomModels().map(customModel => (
-                              <SelectItem 
-                                key={customModel.id} 
+                            {customModels.map(customModel => (
+                              <SelectItem
+                                key={customModel.id}
                                 value={`${customModel.type}::${customModel.value}`}
                               >
                                 {customModel.name} ({customModel.type === ModelType.DALLE ? "DALL-E" : customModel.type === ModelType.GEMINI ? "Gemini" : "OpenAI"})
@@ -663,7 +736,7 @@ function HomeContent() {
                   <p className="text-xs text-gray-500">选择不同的AI模型可能会产生不同风格的图像结果</p>
                 </div>
 
-                {(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE || model === 'gemini-2.5-flash-image-preview' || modelType === ModelType.GEMINI) && (
+                {(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE) && (
                   <>
                     <div className="space-y-2">
                       <h3 className="font-medium">图片尺寸</h3>
@@ -698,28 +771,17 @@ function HomeContent() {
                     {isImageToImage && (
                       <div className="space-y-2">
                         <h3 className="font-medium">图片质量</h3>
-                        <Select 
-                          value={quality} 
-                          onValueChange={(value: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard') => setQuality(value)}
+                        <Select
+                          value={quality}
+                          onValueChange={(value: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard' | '1K' | '2K' | '4K') => setQuality(value)}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="选择图片质量" />
                           </SelectTrigger>
                           <SelectContent>
-                            {model === 'dall-e-3' ? (
-                              <>
-                                <SelectItem value="hd">HD 高质量</SelectItem>
-                                <SelectItem value="standard">标准质量</SelectItem>
-                                <SelectItem value="auto">自动选择</SelectItem>
-                              </>
-                            ) : model === 'gpt-image-1' ? (
-                              <>
-                                <SelectItem value="high">高质量</SelectItem>
-                                <SelectItem value="medium">中等质量</SelectItem>
-                                <SelectItem value="low">低质量</SelectItem>
-                                <SelectItem value="auto">自动选择</SelectItem>
-                              </>
-                            ) : null}
+                            <SelectItem value="hd">HD 高质量</SelectItem>
+                            <SelectItem value="standard">标准质量</SelectItem>
+                            <SelectItem value="auto">自动选择</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -727,7 +789,54 @@ function HomeContent() {
                   </>
                 )}
 
-                {!(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE) && (
+                {(model === 'gemini-2.5-flash-image-preview' || model === 'gemini-3-pro-image-preview' || modelType === ModelType.GEMINI) && (
+                  <>
+                    <div className="space-y-2">
+                      <h3 className="font-medium">图片比例</h3>
+                      <Select value={aspectRatio} onValueChange={(value: AspectRatio) => setAspectRatio(value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择图片比例" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1:1">1:1 方形</SelectItem>
+                          <SelectItem value="16:9">16:9 宽屏</SelectItem>
+                          <SelectItem value="9:16">9:16 竖屏</SelectItem>
+                          <SelectItem value="custom">自定义比例</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {aspectRatio === 'custom' as any && (
+                        <div className="mt-2">
+                          <input
+                            type="text"
+                            placeholder="例如 21:9"
+                            value={customAspectRatio}
+                            onChange={(e) => setCustomAspectRatio(e.target.value)}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="font-medium">图片质量</h3>
+                      <Select
+                        value={quality}
+                        onValueChange={(value: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard' | '1K' | '2K' | '4K') => setQuality(value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择图片质量" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">自动选择</SelectItem>
+                          <SelectItem value="1K">1K</SelectItem>
+                          <SelectItem value="2K">2K</SelectItem>
+                          <SelectItem value="4K">4K</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
+
+                {!(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE || model === 'gemini-2.5-flash-image-preview' || model === 'gemini-3-pro-image-preview' || modelType === ModelType.GEMINI) && (
                   <div className="space-y-2">
                     <h3 className="font-medium">图片比例</h3>
                     <Select value={aspectRatio} onValueChange={(value: AspectRatio) => setAspectRatio(value)}>
@@ -743,15 +852,15 @@ function HomeContent() {
                   </div>
                 )}
 
-                <Button 
-                  className="w-full" 
+                <Button
+                  className="w-full"
                   onClick={handleGenerate}
                   disabled={isGenerating}
                 >
                   {isGenerating ? "生成中..." : isImageToImage ? "编辑图片" : "生成图片"}
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full"
                   onClick={handleReset}
                 >
@@ -759,6 +868,7 @@ function HomeContent() {
                 </Button>
               </CardContent>
             </Card>
+
           </div>
 
           {/* 右侧内容区 */}
@@ -768,15 +878,15 @@ function HomeContent() {
                 <h2 className="text-xl font-semibold">生成结果</h2>
                 {generatedImages.length > 0 && (
                   <div className="flex items-center gap-2">
-                    <Button 
-                      size="icon" 
+                    <Button
+                      size="icon"
                       variant="ghost"
                       onClick={handleDownload}
                     >
                       <Download className="h-5 w-5" />
                     </Button>
-                    <Button 
-                      size="icon" 
+                    <Button
+                      size="icon"
                       variant="ghost"
                       onClick={() => {
                         setIsImageToImage(true)
@@ -796,12 +906,24 @@ function HomeContent() {
                 </div>
               ) : (
                 <div className="w-full h-full flex flex-col gap-4">
-                  {(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE) ? (
-                    <div className="text-center text-gray-400">
-                      {isGenerating ? "正在生成中..." : generatedImages.length === 0 ? "等待生成..." : null}
-                    </div>
+                  {(model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE || model === 'gemini-2.5-flash-image-preview' || model === 'gemini-3-pro-image-preview' || modelType === ModelType.GEMINI) ? (
+                    // 非流式模型（DALLE & Gemini）的展示逻辑
+                    (isGenerating || generatedImages.length === 0) ? (
+                      <div className="flex flex-col items-center justify-center flex-1 w-full min-h-[300px]">
+                        {isGenerating ? (
+                          <div className="text-center text-gray-500 animate-pulse">
+                            <p>正在施展魔法...</p>
+                          </div>
+                        ) : (
+                          <div className="text-center text-gray-400">
+                            <p>等待生成...</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : null
                   ) : (
-                    <div 
+                    // 流式模型（OpenAI Chat等）的展示逻辑
+                    <div
                       ref={contentRef}
                       className="flex-1 overflow-y-auto rounded-lg bg-gray-50 p-4 font-mono text-sm min-h-[200px] markdown-content"
                     >
@@ -836,26 +958,32 @@ function HomeContent() {
                           {streamContent}
                         </ReactMarkdown>
                       ) : (
-                        <div className="text-gray-400 text-center">
-                          {isGenerating ? "正在生成中..." : "等待生成..."}
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                           {isGenerating ? "正在生成中..." : "等待生成..."}
                         </div>
                       )}
                     </div>
                   )}
+                  
+                  {/* 图片展示区域 - 对所有模型通用 */}
                   {generatedImages.length > 0 && (
-                    <div className="relative w-full aspect-square max-w-2xl mx-auto">
-                      <Image
-                        src={generatedImages[currentImageIndex]}
-                        alt={prompt}
-                        fill
-                        className="object-contain rounded-lg"
-                      />
+                    <div className="relative w-full flex-1 flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden min-h-[400px]">
+                      <div className="relative w-full h-full p-2">
+                        <Image
+                          src={generatedImages[currentImageIndex]}
+                          alt={prompt}
+                          fill
+                          className="object-contain"
+                          onClick={() => setShowImageDialog(true)}
+                        />
+                      </div>
+                      
                       {generatedImages.length > 1 && (
                         <>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/50 hover:bg-white/80"
+                            className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white shadow-sm"
                             onClick={handlePrevImage}
                           >
                             <ChevronLeft className="h-6 w-6" />
@@ -863,31 +991,206 @@ function HomeContent() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/50 hover:bg-white/80"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white shadow-sm"
                             onClick={handleNextImage}
                           >
                             <ChevronRight className="h-6 w-6" />
                           </Button>
-                          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white/50 px-2 py-1 rounded-full text-sm">
+                          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
                             {currentImageIndex + 1} / {generatedImages.length}
                           </div>
                         </>
                       )}
+                      
+                      <div className="absolute top-4 right-4 flex gap-2">
+                         <Button
+                            variant="secondary"
+                            size="sm"
+                            className="opacity-80 hover:opacity-100"
+                            onClick={() => setShowImageDialog(true)}
+                          >
+                            <Maximize2 className="h-4 w-4 mr-2" />
+                            查看大图
+                          </Button>
+                      </div>
                     </div>
                   )}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* 右侧广告栏 */}
+          <div className="space-y-6">
+            {/* 即刻AI 推广卡片 */}
+            <div
+              className="rounded-xl p-6 bg-[#f8f9fa] border-0 shadow-none hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+              onClick={() => window.open('https://magic666.top', '_blank')}
+            >
+                <div className="relative z-10 flex flex-col items-center text-center">
+                    <div className="w-16 h-16 mb-4 transform group-hover:scale-110 transition-transform duration-300">
+                        <img
+                          src="https://unpkg.com/@lobehub/fluent-emoji-anim-2@latest/assets/1f618.webp"
+                          alt="即刻AI Logo"
+                          className="w-full h-full object-contain drop-shadow-md"
+                        />
+                    </div>
+                    
+                    <h3 className="font-black text-2xl tracking-tight text-[#FF6B00] mb-2">即刻 AI</h3>
+                    
+                    <p className="text-sm text-gray-600 font-bold mb-4 leading-relaxed">
+                        提供一站式对话，图文，视频模型方案<br/>帮你做设计、画插图！
+                    </p>
+
+                    <div className="flex flex-wrap justify-center gap-2 mb-5">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-bold">Banana2 Pro</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">Midjourney</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold">Sora Image</span>
+                    </div>
+
+                    <div className="w-full py-2 bg-[#FF6B00] text-white rounded-full font-bold text-sm shadow-lg shadow-orange-200 group-hover:bg-[#ff8534] transition-colors flex items-center justify-center gap-1">
+                        立即体验 <ChevronRight className="w-3 h-3" />
+                    </div>
+                </div>
+                
+                {/* 背景装饰 */}
+                <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none">
+                    <div className="absolute top-[-20%] right-[-20%] w-[200px] h-[200px] rounded-full bg-[#FF6B00] blur-3xl"></div>
+                    <div className="absolute bottom-[-20%] left-[-20%] w-[150px] h-[150px] rounded-full bg-blue-500 blur-3xl"></div>
+                </div>
+            </div>
+
+            {/* 模型价格轮播 */}
+            <div className="ticker-container bg-card rounded-xl shadow-sm z-0 mt-8 border-0">
+  
+                <div className="ticker-wrapper px-3">
+                    {/* 1. Banana2 */}
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/gemini-color.svg" alt="Banana2" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Banana2 <span className="badge badge-hot">🔥 HOT</span></span>
+                            <span className="model-desc">谷歌最新大香蕉模型</span>
+                            <span className="model-price">0.12 / 次</span>
+                        </div>
+                    </div>
+
+                    {/* 2. Sora Image */}
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/openai.svg" alt="Sora Image" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Sora Image <span className="badge badge-hot">🔥 HOT</span></span>
+                            <span className="model-desc">OpenAI生图模型</span>
+                            <span className="model-price">0.03 / 次</span>
+                        </div>
+                    </div>
+
+                    {/* 3. Sora Video */}
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/sora-color.svg" alt="Sora Video" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Sora Video <span className="badge badge-new">🚀 NEW</span></span>
+                            <span className="model-desc">OpenAI视频模型</span>
+                            <span className="model-price">0.07 / 次</span>
+                        </div>
+                    </div>
+
+                    {/* 4. Veo */}
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/gemini-color.svg" alt="Veo" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Veo <span className="badge badge-new">🚀 NEW</span></span>
+                            <span className="model-desc">谷歌视频大模型</span>
+                            <span className="model-price">0.07 / 次</span>
+                        </div>
+                    </div>
+
+                    {/* 5. Midjourney */}
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/midjourney.svg" alt="Midjourney" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Midjourney <span className="badge badge-star">⭐️ PRO</span></span>
+                            <span className="model-desc">专业设计生图模型</span>
+                            <span className="model-price">0.06 / 次</span>
+                        </div>
+                    </div>
+
+                    {/* Duplicate for infinite scroll */}
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/gemini-color.svg" alt="Banana2" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Banana2 <span className="badge badge-hot">🔥 HOT</span></span>
+                            <span className="model-desc">谷歌最新大香蕉模型</span>
+                            <span className="model-price">0.12 / 次</span>
+                        </div>
+                    </div>
+
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/openai.svg" alt="Sora Image" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Sora Image <span className="badge badge-hot">🔥 HOT</span></span>
+                            <span className="model-desc">OpenAI生图模型</span>
+                            <span className="model-price">0.03 / 次</span>
+                        </div>
+                    </div>
+
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/sora-color.svg" alt="Sora Video" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Sora Video <span className="badge badge-new">🚀 NEW</span></span>
+                            <span className="model-desc">OpenAI视频模型</span>
+                            <span className="model-price">0.07 / 次</span>
+                        </div>
+                    </div>
+
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/gemini-color.svg" alt="Veo" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Veo <span className="badge badge-new">🚀 NEW</span></span>
+                            <span className="model-desc">谷歌视频大模型</span>
+                            <span className="model-price">0.07 / 次</span>
+                        </div>
+                    </div>
+
+                    <div className="model-card">
+                        <div className="model-icon">
+                            <img src="icon/midjourney.svg" alt="Midjourney" />
+                        </div>
+                        <div className="model-info">
+                            <span className="model-name">Midjourney <span className="badge badge-star">⭐️ PRO</span></span>
+                            <span className="model-desc">专业设计生图模型</span>
+                            <span className="model-price">0.06 / 次</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <ApiKeyDialog 
-        open={showApiKeyDialog} 
-        onOpenChange={setShowApiKeyDialog} 
+      <ApiKeyDialog
+        open={showApiKeyDialog}
+        onOpenChange={setShowApiKeyDialog}
       />
-      <HistoryDialog 
-        open={showHistoryDialog} 
+      <HistoryDialog
+        open={showHistoryDialog}
         onOpenChange={setShowHistoryDialog}
         onEditImage={(imageUrl) => {
           setIsImageToImage(true)
@@ -901,9 +1204,9 @@ function HomeContent() {
       />
 
       <footer className="w-full py-4 text-center text-sm text-gray-500">
-        <a 
-          href="https://github.com/HappyDongD/magic_image" 
-          target="_blank" 
+        <a
+          href="https://github.com/HappyDongD/magic_image"
+          target="_blank"
           rel="noopener noreferrer"
           className="hover:text-primary transition-colors inline-flex items-center gap-2"
         >
@@ -913,13 +1216,18 @@ function HomeContent() {
       </footer>
 
       <Dialog open={showImageDialog} onOpenChange={setShowImageDialog}>
-        <DialogContent className="max-w-4xl">
-          <div className="relative w-full aspect-square">
+        <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 border-0 bg-transparent shadow-none">
+           <div className="visually-hidden">
+             <DialogTitle>查看大图</DialogTitle>
+             <DialogDescription>查看生成图片的详细预览</DialogDescription>
+           </div>
+          <div className="relative w-full h-[85vh] flex items-center justify-center">
             <Image
               src={generatedImages[currentImageIndex]}
               alt={prompt}
               fill
-              className="object-contain rounded-lg"
+              className="object-contain"
+              quality={100}
             />
           </div>
         </DialogContent>

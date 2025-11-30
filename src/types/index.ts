@@ -35,8 +35,8 @@ export interface CustomModel {
   createdAt: string
 }
 
-export type GenerationModel = 'sora_image' | 'gpt_4o_image' | 'gpt-image-1' | 'dall-e-3' | 'gemini-2.5-flash-image-preview' | string
-export type AspectRatio = '1:1' | '16:9' | '9:16'
+export type GenerationModel = 'sora_image' | 'gemini-2.5-flash-image-preview' | 'gemini-3-pro-image-preview' | string
+export type AspectRatio = '1:1' | '16:9' | '9:16' | string
 export type ImageSize = '1024x1024' | '1536x1024' | '1024x1536' | 'auto' | '1792x1024'
 
 export interface GenerateImageRequest {
@@ -49,6 +49,6 @@ export interface GenerateImageRequest {
   aspectRatio?: AspectRatio
   size?: ImageSize
   n?: number
-  quality?: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard'
+  quality?: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard' | '1K' | '2K' | '4K'
   mask?: string
-} 
+}

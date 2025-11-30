@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+﻿import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -23,10 +23,14 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
   const [editingModelId, setEditingModelId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (open) {
-      const savedModels = storage.getCustomModels()
-      setModels(savedModels)
+    const loadModels = async () => {
+      if (open) {
+        const savedModels = await storage.getCustomModels()
+        setModels(savedModels)
+      }
     }
+
+    loadModels()
   }, [open])
 
   const resetForm = () => {
@@ -36,13 +40,12 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
     setEditingModelId(null)
   }
 
-  const handleAddModel = () => {
+  const handleAddModel = async () => {
     if (!modelName.trim() || !modelValue.trim()) {
       toast.error("模型名称和值不能为空")
       return
     }
 
-    // 检查是否已存在相同的模型值，防止重复添加
     const modelExists = models.some(model => 
       model.id !== editingModelId && (
         model.value.toLowerCase() === modelValue.trim().toLowerCase() || 
@@ -51,7 +54,7 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
     )
 
     if (modelExists) {
-      toast.error("已存在相同名称或相同值的模型，请使用不同的名称或值")
+      toast.error("已存在相同名称或值的模型，请使用不同的名称或值")
       return
     }
 
@@ -64,13 +67,11 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
     }
 
     if (editingModelId) {
-      // 更新现有模型
-      storage.updateCustomModel(editingModelId, newModel)
+      await storage.updateCustomModel(editingModelId, newModel)
       setModels(prev => prev.map(model => model.id === editingModelId ? newModel : model))
       toast.success("模型已更新")
     } else {
-      // 添加新模型
-      storage.addCustomModel(newModel)
+      await storage.addCustomModel(newModel)
       setModels(prev => [...prev, newModel])
       toast.success("模型已添加")
     }
@@ -85,8 +86,8 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
     setEditingModelId(model.id)
   }
 
-  const handleDeleteModel = (id: string) => {
-    storage.removeCustomModel(id)
+  const handleDeleteModel = async (id: string) => {
+    await storage.removeCustomModel(id)
     setModels(prev => prev.filter(model => model.id !== id))
     toast.success("模型已删除")
   }
@@ -110,14 +111,14 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
             <div className="grid gap-3">
               <div>
                 <Input
-                  placeholder="模型名称（显示在界面上）"
+                  placeholder="模型名称（展示在界面上）"
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
                 />
               </div>
               <div>
                 <Input
-                  placeholder="模型值（实际API使用的值）"
+                  placeholder="模型值（实际 API 使用的值）"
                   value={modelValue}
                   onChange={(e) => setModelValue(e.target.value)}
                 />
@@ -134,7 +135,7 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500 mt-1">
-                  DALL-E格式：使用图像生成接口 | OpenAI格式：使用聊天接口 | Gemini格式：使用Gemini图像生成接口
+                  DALL-E：用于图片生成接口 | OpenAI：用于 Chat/图片生成接口 | Gemini：用于 Gemini 图片生成接口
                 </p>
               </div>
               <Button onClick={handleAddModel}>
@@ -160,7 +161,7 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
                       <p className="font-medium truncate">{model.name}</p>
                       <p className="text-xs text-gray-500 truncate">{model.value}</p>
                       <p className="text-xs text-gray-500">
-                        类型: {model.type === ModelType.DALLE ? 'DALL-E' : 'OpenAI'}
+                        类型: {model.type === ModelType.DALLE ? 'DALL-E' : model.type === ModelType.GEMINI ? 'Gemini' : 'OpenAI'}
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -183,4 +184,4 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
       </DialogContent>
     </Dialog>
   )
-} 
+}

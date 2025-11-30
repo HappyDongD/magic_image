@@ -12,7 +12,7 @@ export interface GenerateImageRequest {
   aspectRatio?: AspectRatio
   size?: ImageSize
   n?: number
-  quality?: 'high' | 'medium' | 'low' | 'hd' | 'standard'| 'auto'
+  quality?: 'high' | 'medium' | 'low' | 'hd' | 'standard'| 'auto' | '1K' | '2K' | '4K'
   mask?: string
   sourceImages?: string[]
 }
@@ -47,7 +47,7 @@ const buildRequestUrl = (baseUrl: string, endpoint: string): string => {
 
 export const api = {
   generateDalleImage: async (request: GenerateImageRequest): Promise<DalleImageResponse> => {
-    const config = storage.getApiConfig()
+    const config = await storage.getApiConfig()
     if (!config) {
       showErrorToast("请先设置 API 配置")
       throw new Error('请先设置 API 配置')
@@ -94,7 +94,7 @@ export const api = {
   },
 
   editDalleImage: async (request: GenerateImageRequest): Promise<DalleImageResponse> => {
-    const config = storage.getApiConfig()
+    const config = await storage.getApiConfig()
     if (!config) {
       showErrorToast("请先设置 API 配置")
       throw new Error('请先设置 API 配置')
@@ -177,7 +177,7 @@ export const api = {
   },
 
   generateGeminiImage: async (request: GenerateImageRequest): Promise<{ data: Array<{ url?: string, b64_json?: string }> }> => {
-    const config = storage.getApiConfig()
+    const config = await storage.getApiConfig()
     if (!config) {
       showErrorToast("请先设置 API 配置")
       throw new Error('请先设置 API 配置')
@@ -189,6 +189,18 @@ export const api = {
     }
 
     const requestUrl = buildRequestUrl(config.baseUrl, `/v1beta/models/${request.model}:generateContent`)
+
+    const generationConfig: any = {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: {}
+    }
+
+    if (request.aspectRatio) {
+      generationConfig.imageConfig.aspectRatio = request.aspectRatio
+    }
+    if (request.quality && request.quality !== 'auto') {
+      generationConfig.imageConfig.imageSize = request.quality
+    }
 
     const response = await fetch(requestUrl, {
       method: 'POST',
@@ -206,9 +218,7 @@ export const api = {
             ]
           }
         ],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"]
-        }
+        generationConfig
       })
     })
 
@@ -252,7 +262,7 @@ export const api = {
   },
 
   editGeminiImage: async (request: GenerateImageRequest): Promise<{ data: Array<{ url?: string, b64_json?: string }> }> => {
-    const config = storage.getApiConfig()
+    const config = await storage.getApiConfig()
     if (!config) {
       showErrorToast("请先设置 API 配置")
       throw new Error('请先设置 API 配置')
@@ -279,6 +289,18 @@ export const api = {
         bytes[i] = binaryData.charCodeAt(i)
       }
 
+      const generationConfig: any = {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: {}
+      }
+  
+      if (request.aspectRatio) {
+        generationConfig.imageConfig.aspectRatio = request.aspectRatio
+      }
+      if (request.quality && request.quality !== 'auto') {
+        generationConfig.imageConfig.imageSize = request.quality
+      }
+
       const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
@@ -301,9 +323,7 @@ export const api = {
               ]
             }
           ],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"]
-          }
+          generationConfig
         })
       })
 
@@ -356,7 +376,7 @@ export const api = {
   },
 
   generateStreamImage: async (request: GenerateImageRequest, callbacks: StreamCallback) => {
-    const config = storage.getApiConfig()
+    const config = await storage.getApiConfig()
     if (!config) {
       const error = '请先设置 API 配置'
       showErrorToast(error)

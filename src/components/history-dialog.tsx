@@ -18,14 +18,20 @@ export function HistoryDialog({ open, onOpenChange, onEditImage }: HistoryDialog
   const [history, setHistory] = useState<GeneratedImage[]>([])
 
   useEffect(() => {
-    if (open) {
-      setHistory(storage.getHistory())
+    const loadHistory = async () => {
+      if (open) {
+        const storedHistory = await storage.getHistory()
+        setHistory(storedHistory)
+      }
     }
+
+    loadHistory()
   }, [open])
 
-  const handleDelete = (id: string) => {
-    storage.removeFromHistory(id)
-    setHistory(storage.getHistory())
+  const handleDelete = async (id: string) => {
+    await storage.removeFromHistory(id)
+    const storedHistory = await storage.getHistory()
+    setHistory(storedHistory)
   }
 
   const handleDownload = async (url: string) => {

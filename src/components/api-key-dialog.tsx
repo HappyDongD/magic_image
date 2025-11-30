@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+﻿import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
@@ -18,11 +18,15 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
   const [errors, setErrors] = useState<{ key?: string; baseUrl?: string }>({})
 
   useEffect(() => {
-    const config = storage.getApiConfig()
-    if (config) {
-      setKey(config.key)
-      setBaseUrl(config.baseUrl)
+    const loadConfig = async () => {
+      const config = await storage.getApiConfig()
+      if (config) {
+        setKey(config.key)
+        setBaseUrl(config.baseUrl)
+      }
     }
+
+    loadConfig()
   }, [open])
 
   const validateInputs = () => {
@@ -31,27 +35,27 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
       newErrors.key = "请输入 API Key"
     }
     if (!baseUrl.trim()) {
-      newErrors.baseUrl = "请输入API基础地址"
+      newErrors.baseUrl = "请输入 API 基础地址"
     }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validateInputs()) return
     
-    // 确保使用HTTPS协议
+    // 确保使用 HTTPS 协议
     let secureUrl = baseUrl.trim()
     
-    // 检查URL是否以#结尾（特殊处理标记）
+    // 检查 URL 是否已结尾（特殊处理标记）
     const endsWithHash = secureUrl.endsWith('#')
     
     if (secureUrl.startsWith('http:') && !endsWithHash) {
       secureUrl = secureUrl.replace('http:', 'https:')
-      toast.info("为确保安全，已自动将HTTP协议转换为HTTPS")
+      toast.info("为确保安全，已自动将 HTTP 协议转换为 HTTPS")
     }
     
-    storage.setApiConfig(key.trim(), secureUrl)
+    await storage.setApiConfig(key.trim(), secureUrl)
     toast.success("保存成功")
     onOpenChange(false)
   }
@@ -66,7 +70,7 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
           <div className="space-y-2">
             <div>
               <Input
-                placeholder="请输入API基础地址，如需使用完整URL，请在末尾添加#符号"
+                placeholder="请输入 API 基础地址，如需使用完整 URL，请在末尾添加 # 符号"
                 value={baseUrl}
                 onChange={(e) => {
                   setBaseUrl(e.target.value)
@@ -79,10 +83,10 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
               )}
               <div className="flex flex-col gap-1 mt-1">
                 <p className="text-xs text-amber-500">
-                  注意：在HTTPS网站中使用HTTP接口可能会被浏览器阻止，建议使用HTTPS协议
+                  注意：在 HTTPS 站点中使用 HTTP 接口可能会被浏览器阻止，建议使用 HTTPS 协议
                 </p>
                 <p className="text-xs text-gray-500">
-                  默认添加API路径（如/v1/chat/completions），若URL以#结尾则使用完整输入地址
+                  默认添加 API 路径（如 /v1/chat/completions），若 URL 已结尾则使用完整输入地址
                 </p>
               </div>
             </div>
@@ -123,4 +127,4 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
       </DialogContent>
     </Dialog>
   )
-} 
+}
