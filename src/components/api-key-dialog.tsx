@@ -1,4 +1,4 @@
-﻿import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+﻿import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
@@ -62,15 +62,38 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>API 配置</DialogTitle>
+          <DialogTitle>配置生图密钥</DialogTitle>
+          <DialogDescription>
+            配置AI模型的 BASE_URL 和 KEY，用于验证身份和计费。
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <div>
+        
+        <div className="space-y-6 py-4">
+          <Button
+             className="w-full bg-[#FF6B00] hover:bg-[#e66000] text-white font-bold py-6 text-base shadow-lg shadow-orange-100"
+             onClick={() => window.open('https://magic666.top', '_blank')}
+          >
+             👉 点击前往注册/获取密钥
+          </Button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">或者手动配置</span>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                BASE_URL (模型服务商网址)
+              </label>
               <Input
-                placeholder="请输入 API 基础地址，如需使用完整 URL，请在末尾添加 # 符号"
+                placeholder="https://..."
                 value={baseUrl}
                 onChange={(e) => {
                   setBaseUrl(e.target.value)
@@ -81,43 +104,45 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
               {errors.baseUrl && (
                 <p className="text-sm text-red-500 mt-1">{errors.baseUrl}</p>
               )}
-              <div className="flex flex-col gap-1 mt-1">
-                <p className="text-xs text-amber-500">
-                  注意：在 HTTPS 站点中使用 HTTP 接口可能会被浏览器阻止，建议使用 HTTPS 协议
-                </p>
-                <p className="text-xs text-gray-500">
-                  默认添加 API 路径（如 /v1/chat/completions），若 URL 已结尾则使用完整输入地址
-                </p>
+              <p className="text-[10px] text-gray-400">
+                 例如: https://yooart.top 或其他服务商网址，注：末尾不要带 / 符号。
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                 API KEY (密钥)
+              </label>
+              <div className="relative">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  placeholder="sk-..."
+                  value={key}
+                  onChange={(e) => {
+                    setKey(e.target.value)
+                    setErrors(prev => ({ ...prev, key: undefined }))
+                  }}
+                  className={`pr-10 ${errors.key ? "border-red-500" : ""}`}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowKey(!showKey)}
+                >
+                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
               </div>
-            </div>
-            <div className="relative">
-              <Input
-                type={showKey ? "text" : "password"}
-                placeholder="请输入您的 API Key"
-                value={key}
-                onChange={(e) => {
-                  setKey(e.target.value)
-                  setErrors(prev => ({ ...prev, key: undefined }))
-                }}
-                className={`pr-10 ${errors.key ? "border-red-500" : ""}`}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-0 top-0 h-full px-3"
-                onClick={() => setShowKey(!showKey)}
-              >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
               {errors.key && (
-                <p className="text-sm text-red-500 mt-1">{errors.key}</p>
+                  <p className="text-sm text-red-500 mt-1">{errors.key}</p>
               )}
+              <p className="text-[10px] text-gray-400">
+                模型服务商的 API 密钥，仅存储在你的本地浏览器中。
+              </p>
             </div>
-            <p className="text-xs text-gray-500">
-              API 配置将安全地存储在您的浏览器中，不会上传到服务器
-            </p>
           </div>
-          <div className="flex justify-end gap-2">
+          
+          <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               取消
             </Button>
