@@ -45,6 +45,15 @@ const buildRequestUrl = (baseUrl: string, endpoint: string): string => {
   return `${baseUrl}${endpoint}`;
 }
 
+/**
+ * Fetch wrapper that deliberately ignores any AbortSignal so requests never timeout
+ * unless the browser/network forcibly closes the connection.
+ */
+const fetchNoTimeout = (input: any, init: any = {}) => {
+  const { signal, ...rest } = init || {};
+  return fetch(input, rest);
+};
+
 export const api = {
   generateDalleImage: async (request: GenerateImageRequest): Promise<DalleImageResponse> => {
     const config = await storage.getApiConfig()
@@ -66,7 +75,7 @@ export const api = {
 
     const requestUrl = buildRequestUrl(config.baseUrl, endpoint);
 
-    const response = await fetch(requestUrl, {
+    const response = await fetchNoTimeout(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -122,7 +131,7 @@ export const api = {
       formData.append('prompt', request.prompt)
       console.log(request.sourceImage)
       // 处理源图片
-      const sourceImageResponse = await fetch(request.sourceImage)
+      const sourceImageResponse = await fetchNoTimeout(request.sourceImage)
       if (!sourceImageResponse.ok) {
         throw new Error('获取源图片失败')
       }
@@ -132,7 +141,7 @@ export const api = {
       // 处理遮罩图片
       if (request.mask) {
         console.log(request.mask)
-        const maskResponse = await fetch(request.mask)
+        const maskResponse = await fetchNoTimeout(request.mask)
         if (!maskResponse.ok) {
           throw new Error('获取遮罩图片失败')
         }
@@ -147,7 +156,7 @@ export const api = {
 
       const requestUrl = buildRequestUrl(config.baseUrl, endpoint);
 
-      const response = await fetch(requestUrl, {
+      const response = await fetchNoTimeout(requestUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.key}`
@@ -202,7 +211,7 @@ export const api = {
       generationConfig.imageConfig.imageSize = request.quality
     }
 
-    const response = await fetch(requestUrl, {
+    const response = await fetchNoTimeout(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -301,7 +310,7 @@ export const api = {
         generationConfig.imageConfig.imageSize = request.quality
       }
 
-      const response = await fetch(requestUrl, {
+      const response = await fetchNoTimeout(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -444,7 +453,7 @@ export const api = {
 
     const requestUrl = buildRequestUrl(config.baseUrl, endpoint);
 
-    const response = await fetch(requestUrl, {
+    const response = await fetchNoTimeout(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

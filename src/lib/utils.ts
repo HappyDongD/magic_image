@@ -5,6 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Fetch wrapper that ignores AbortSignal to avoid request-level timeouts.
+ */
+const fetchNoTimeout = (input: any, init: any = {}) => {
+  const { signal, ...rest } = init || {};
+  return fetch(input, rest);
+};
+
 export async function downloadImageToBase64(url: string): Promise<string> {
   try {
     // If it's already a base64 string, return it
@@ -13,7 +21,7 @@ export async function downloadImageToBase64(url: string): Promise<string> {
     }
     
     // Attempt to fetch the image
-    const response = await fetch(url);
+    const response = await fetchNoTimeout(url);
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     }
