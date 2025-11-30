@@ -1072,7 +1072,7 @@ function HomeContent() {
                     </div>
 
                     <div className="w-full py-2 bg-[#FF6B00] text-white rounded-full font-bold text-sm shadow-lg shadow-orange-200 group-hover:bg-[#ff8534] transition-colors flex items-center justify-center gap-1">
-                        立即体验 <ChevronRight className="w-3 h-3" />
+                        注册就送1刀 <ChevronRight className="w-3 h-3" />
                     </div>
                 </div>
                 
