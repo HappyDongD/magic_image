@@ -39,7 +39,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-/.next
-/web-dist.zip
-/web-dist
 /.idea

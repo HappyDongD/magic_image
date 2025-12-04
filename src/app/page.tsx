@@ -5,14 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronRight, ArrowUp, Info, ChevronDown, Wand2, X, AlertTriangle, Edit, ChevronLeft, Video } from "lucide-react"
+import { Settings, History, Image as ImageIcon, MessageSquare, Upload, ChevronRight, ArrowUp, Info, ChevronDown, Wand2, X, AlertTriangle, Edit, ChevronLeft } from "lucide-react"
 import Image from "next/image"
-import Link from "next/link"
 import { ApiKeyDialog } from "@/components/api-key-dialog"
 import { HistoryDialog } from "@/components/history-dialog"
 import { useState, useRef, useEffect, Suspense, useCallback } from "react"
 import { api } from "@/lib/api"
-import { GenerationModel, AspectRatio, ImageSize, ModelType, CustomModel, GenerationResult, VideoStyle, VideoTaskResponse } from "@/types"
+import { GenerationModel, AspectRatio, ImageSize, ModelType, CustomModel } from "@/types"
 import { storage } from "@/lib/storage"
 import { v4 as uuidv4 } from 'uuid'
 import confetti from 'canvas-confetti'
@@ -26,6 +25,16 @@ import rehypeHighlight from 'rehype-highlight'
 import { CustomModelDialog } from "@/components/custom-model-dialog"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+
+interface GenerationResult {
+  id: string
+  status: 'loading' | 'success' | 'failed'
+  url?: string
+  model: string
+  duration?: string
+  error?: string
+  aspectRatio: string
+}
 
 export default function Home() {
   return (
@@ -58,9 +67,8 @@ function HomeContent() {
   const [showHistoryDialog, setShowHistoryDialog] = useState(false)
   const [showCustomModelDialog, setShowCustomModelDialog] = useState(false)
   const [prompt, setPrompt] = useState("")
-  const [generationType, setGenerationType] = useState<'image' | 'video'>('video')
-  const [model, setModel] = useState<GenerationModel>("sora-2")
-  const [modelType, setModelType] = useState<ModelType>(ModelType.OPENAI_VIDEO)
+  const [model, setModel] = useState<GenerationModel>("sora_image")
+  const [modelType, setModelType] = useState<ModelType>(ModelType.OPENAI)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedImages, setGeneratedImages] = useState<GenerationResult[]>([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
@@ -69,18 +77,13 @@ function HomeContent() {
   const [streamContent, setStreamContent] = useState<string>("")
   const [isImageToImage, setIsImageToImage] = useState(false)
   const [sourceImages, setSourceImages] = useState<string[]>([])
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16")
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1")
   const [customAspectRatio, setCustomAspectRatio] = useState("")
   const [size, setSize] = useState<ImageSize>("1024x1024")
   const [n, setN] = useState(1)
   const [quality, setQuality] = useState<'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard' | '1K' | '2K' | '4K'>('auto')
   const [customModels, setCustomModels] = useState<CustomModel[]>([])
   const [page, setPage] = useState(1)
-  
-  // Video specific state
-  const [videoStyle, setVideoStyle] = useState<VideoStyle>('thanksgiving')
-  const [videoDuration, setVideoDuration] = useState<string>('10')
-  
   const pageSize = 20
   const contentRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -137,75 +140,15 @@ function HomeContent() {
       if (history && history.length > 0) {
          setGeneratedImages(history.map(item => ({
             id: item.id,
-            status: item.status || 'success',
+            status: 'success',
             url: item.url,
             model: item.model,
             aspectRatio: item.aspectRatio || '1:1',
-            type: item.type || 'image',
-            videoUrl: item.videoUrl,
-            duration: item.duration,
          })))
       }
     }
     loadHistory()
   }, [])
-
-  // Video Polling Effect
-  useEffect(() => {
-      const pendingVideos = generatedImages.filter(
-          img => img.type === 'video' && (img.status === 'loading' || img.status === 'queued') && !img.isPlaceholder
-      );
-
-      if (pendingVideos.length === 0) return;
-
-      const intervalId = setInterval(async () => {
-          for (const video of pendingVideos) {
-              try {
-                  const status = await api.getVideoStatus(video.id);
-                  if (status.status === 'completed' || status.status === 'success') {
-                      setGeneratedImages(prev => prev.map(item =>
-                          item.id === video.id ? {
-                              ...item,
-                              status: 'success',
-                              url: status.video_url || item.url, // Video URL primarily
-                              videoUrl: status.video_url,
-                              duration: status.seconds ? `${status.seconds}s` : item.duration,
-                              progress: 100
-                          } : item
-                      ));
-                      
-                      storage.addToHistory({
-                          id: video.id,
-                          prompt: video.id, // We might not have prompt here easily unless we stored it in local state properly, but id is unique
-                          url: status.video_url!,
-                          model: status.model,
-                          createdAt: new Date().toISOString(),
-                          aspectRatio: '16:9',
-                          type: 'video',
-                          videoUrl: status.video_url,
-                          duration: status.seconds,
-                          status: 'success'
-                      });
-                      
-                      toast.success("视频生成完成！");
-                  } else if (status.status === 'failed') {
-                      setGeneratedImages(prev => prev.map(item =>
-                          item.id === video.id ? {
-                              ...item,
-                              status: 'failed',
-                              error: '生成失败'
-                          } : item
-                      ));
-                  }
-                  // Handle progress if available
-              } catch (e) {
-                  console.error("Polling error", e);
-              }
-          }
-      }, 5000); // Poll every 5 seconds
-
-      return () => clearInterval(intervalId);
-  }, [generatedImages]);
 
   useEffect(() => {
     if (!showCustomModelDialog) {
@@ -214,13 +157,9 @@ function HomeContent() {
   }, [showCustomModelDialog, loadCustomModels])
 
   useEffect(() => {
-    const matchedModels = customModels.filter(cm => cm.value === model)
-    if (matchedModels.length > 0) {
-      // 如果当前 modelType 与选中的 model 匹配，则不变更（防止同名同ID但不同类型的模型被覆盖）
-      if (matchedModels.some(m => m.type === modelType)) {
-        return
-      }
-      setModelType(matchedModels[0].type)
+    const customModel = customModels.find(cm => cm.value === model)
+    if (customModel) {
+      setModelType(customModel.type)
       return
     }
 
@@ -229,29 +168,15 @@ function HomeContent() {
       return
     }
     if (model === 'sora_image') {
-    setModelType(ModelType.OPENAI)
-    return
-  }
+      setModelType(ModelType.OPENAI)
+      return
+    }
 
-  if (model === 'sora-2') {
-    setModelType(ModelType.OPENAI_VIDEO)
-    return
-  }
-
-  if (typeof model === 'string' && model.startsWith('gemini')) {
-    setModelType(ModelType.GEMINI)
-    return
-  }
-}, [model, customModels])
-
-// 根据模型类型自动切换生成类型（图片/视频）
-useEffect(() => {
-  if (modelType === ModelType.OPENAI_VIDEO) {
-    setGenerationType('video')
-  } else {
-    setGenerationType('image')
-  }
-}, [modelType])
+    if (typeof model === 'string' && model.startsWith('gemini')) {
+      setModelType(ModelType.GEMINI)
+      return
+    }
+  }, [model, customModels])
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
@@ -301,84 +226,20 @@ useEffect(() => {
   }
 
   const handleGenerate = async () => {
+    if (isImageToImage && sourceImages.length === 0) {
+      setError("请先上传或选择图片")
+      return
+    }
     if (!prompt.trim()) {
       setError("请输入提示词")
       return
-    }
-
-    if (generationType === 'image' && isImageToImage && sourceImages.length === 0) {
-        setError("请先上传或选择图片")
-        return
     }
 
     setError(null)
     setIsGenerating(true)
     setStreamContent("")
     setCurrentImageIndex(0)
-    setPage(1)
 
-    // Handle Video Generation
-    if (generationType === 'video') {
-        const placeholderId = uuidv4();
-        const placeholder: GenerationResult = {
-            id: placeholderId,
-            status: 'loading',
-            model: model,
-            aspectRatio: aspectRatio === '9:16' ? '9:16' : '16:9',
-            type: 'video',
-            url: '', // No URL initially
-            isPlaceholder: true
-        };
-
-        setGeneratedImages(prev => [placeholder, ...prev]);
-
-        try {
-            // Determine size based on aspectRatio
-            // Default 720x1280 (Vertical 9:16) or 1280x720 (Horizontal 16:9)
-            // If user selected 1:1, we default to 1280x720 or keep as is? User instructions say "720x1280 or 1280x720"
-            let size = "720x1280"; // Default
-            if (aspectRatio === '16:9') {
-                size = "1280x720";
-            } else if (aspectRatio === '9:16') {
-                size = "720x1280";
-            } else {
-                 // Fallback or default
-                 size = "720x1280";
-            }
-
-            const response = await api.generateVideo({
-                prompt: prompt.trim(),
-                model: model,
-                seconds: videoDuration,
-                style: videoStyle,
-                source_images: sourceImages,
-                size: size,
-            });
-
-            // Update placeholder with real Task ID
-            setGeneratedImages(prev => prev.map(item =>
-                item.id === placeholderId ? {
-                    ...item,
-                    id: response.id, // Switch to real task ID
-                    status: 'loading', // Still loading/queued
-                    isPlaceholder: false
-                } : item
-            ));
-
-            toast.success("视频任务已提交，请耐心等待...");
-
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : "生成失败";
-            setGeneratedImages(prev => prev.map(img =>
-                img.id === placeholderId ? { ...img, status: 'failed', error: errorMessage } : img
-            ));
-        } finally {
-            setIsGenerating(false);
-        }
-        return;
-    }
-
-    // Handle Image Generation
     const startTime = Date.now()
 
     // Create placeholder loading states based on 'n' (concurrency)
@@ -387,11 +248,11 @@ useEffect(() => {
       status: 'loading',
       model: model,
       aspectRatio: aspectRatio,
-      type: 'image'
     }))
     
     // Replace current results with loading placeholders
     setGeneratedImages(prev => [...placeholders, ...prev])
+    setPage(1)
 
     try {
       const isDalleModel = model === 'dall-e-3' || model === 'gpt-image-1' || modelType === ModelType.DALLE
@@ -403,9 +264,9 @@ useEffect(() => {
         enhancedPrompt += `\n\n参考图片信息：上传了${sourceImages.length}张参考图片，第一张作为主要参考，其他图片作为额外参考。`;
       }
 
-      // 处理自定义宽高比
+      // 处理 Gemini 的自定义宽高比
       let finalAspectRatio = aspectRatio
-      if (aspectRatio === 'custom' as any) {
+      if (isGeminiModel && aspectRatio === 'custom' as any) {
         finalAspectRatio = customAspectRatio
       }
 
@@ -489,7 +350,6 @@ useEffect(() => {
             } else {
                 // Stream based models
                 await new Promise<void>((resolve, reject) => {
-                    let isResolved = false;
                     api.generateStreamImage(
                       {
                         prompt: finalPrompt,
@@ -506,7 +366,6 @@ useEffect(() => {
                         },
                         onComplete: (imageUrl) => {
                            rawImageUrls = [imageUrl];
-                           isResolved = true;
                            resolve();
                         },
                         onError: (error) => {
@@ -515,19 +374,10 @@ useEffect(() => {
                             const apiError = error as any
                             msg = `图片生成失败: ${apiError.message || '未知错误'}\n${apiError.code ? `错误代码: ${apiError.code}` : ''}`
                           }
-                          isResolved = true;
                           reject(new Error(msg));
                         }
                       }
-                    ).then(() => {
-                        if (!isResolved) {
-                            reject(new Error("未检测到生成的图片链接，请检查模型输出"));
-                        }
-                    }).catch((e) => {
-                        if (!isResolved) {
-                            reject(e);
-                        }
-                    })
+                    )
                 });
             }
 
@@ -549,8 +399,7 @@ useEffect(() => {
                     url: imageUrls[0], // Take the first one for this task
                     model,
                     duration,
-                    aspectRatio: finalAspectRatio,
-                    type: 'image'
+                    aspectRatio: finalAspectRatio
                  }
 
                  setGeneratedImages(prev => prev.map(img => img.id === placeholderId ? result : img));
@@ -561,8 +410,7 @@ useEffect(() => {
                     url: imageUrls[0],
                     model,
                     createdAt: new Date().toISOString(),
-                    aspectRatio: '1:1',
-                    type: 'image'
+                    aspectRatio: '1:1'
                   })
                   
                   if (placeholders[0].id === placeholderId) {
@@ -593,7 +441,6 @@ useEffect(() => {
   }
 
   const modelOptions = [
-    { value: "sora-2", label: "Sora 2.0", type: ModelType.OPENAI_VIDEO },
     { value: "sora_image", label: "Sora Image", type: ModelType.OPENAI },
     { value: "gemini-3-pro-image-preview", label: "Banana Pro", type: ModelType.GEMINI },
     { value: "gemini-2.5-flash-image-preview", label: "Banana 2.5", type: ModelType.GEMINI },
@@ -604,9 +451,9 @@ useEffect(() => {
     { name: '免费模型', value: 'sora_image', type: ModelType.OPENAI },
     { name: 'Nano-Banana-2.0', value: 'gemini-2.5-flash-image-preview', type: ModelType.GEMINI },
     { name: 'GPT-4O-image', value: 'dall-e-3', type: ModelType.DALLE },
-    { name: 'Midjourney', value: 'midjourney', type: ModelType.MJ },
+    { name: 'Midjourney', value: 'midjourney', type: ModelType.MJ }, 
   ]
-
+  
   // 处理点击标签切换模型
   const handleQuickModelClick = (item: any) => {
       // 检查是否是 Midjourney (占位处理，目前逻辑中没有直接对应 MJ 的处理分支，暂归为自定义或 OpenAI 类处理逻辑，或者仅作为示例)
@@ -627,8 +474,6 @@ useEffect(() => {
             <img src="https://unpkg.com/@lobehub/fluent-emoji-anim-2@latest/assets/1f618.webp" alt="Magic Image" className="w-10 h-10" />
             <span>Magic Image</span>
           </div>
-
-          {/* Nav removed as requested */}
 
           <div className="flex items-center gap-4">
              <Button variant="default" size="sm" className="bg-black text-white hover:bg-black/90 rounded-full px-4" onClick={() => setShowApiKeyDialog(true)}>
@@ -707,15 +552,14 @@ useEffect(() => {
                          <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
                                {(() => {
-                                   const currentModel = modelOptions.find(m => m.value === model) || customModels.find(m => m.value === model && m.type === modelType) || customModels.find(m => m.value === model);
+                                   const currentModel = modelOptions.find(m => m.value === model) || customModels.find(m => m.value === model);
                                    if (currentModel?.value === 'sora_image' || currentModel?.value === 'dall-e-3') return <img src="icon/openai.svg" className="w-4 h-4" alt="OpenAI" />;
-                                   if (currentModel?.value === 'sora-2' || currentModel?.type === ModelType.OPENAI_VIDEO) return <img src="icon/sora-color.svg" className="w-4 h-4" alt="Sora" />;
                                    if (currentModel?.value?.includes('gemini')) return <img src="icon/gemini-color.svg" className="w-4 h-4" alt="Gemini" />;
                                    if (currentModel?.value === 'midjourney') return <img src="icon/midjourney.svg" className="w-4 h-4" alt="Midjourney" />;
                                    return <Settings className="w-4 h-4" />;
                                })()}
                                <span className="truncate max-w-[100px] sm:max-w-none">
-                                   {modelOptions.find(m => m.value === model)?.label || customModels.find(m => m.value === model && m.type === modelType)?.name || customModels.find(m => m.value === model)?.name || "模型选择"}
+                                   {modelOptions.find(m => m.value === model)?.label || customModels.find(m => m.value === model)?.name || "模型选择"}
                                </span>
                                <ChevronDown className="w-3 h-3 opacity-50 shrink-0" />
                             </Button>
@@ -728,7 +572,6 @@ useEffect(() => {
                                }} className="gap-2">
                                   {(opt.value === 'sora_image' || opt.value === 'dall-e-3') && <img src="icon/openai.svg" className="w-4 h-4" alt="OpenAI" />}
                                   {opt.value.includes('gemini') && <img src="icon/gemini-color.svg" className="w-4 h-4" alt="Gemini" />}
-                                  {(opt.value === 'sora-2' || opt.type === ModelType.OPENAI_VIDEO) && <img src="icon/sora-color.svg" className="w-4 h-4" alt="Sora" />}
                                   {opt.label}
                                </DropdownMenuItem>
                             ))}
@@ -741,10 +584,7 @@ useEffect(() => {
                                         setModel(cm.value as GenerationModel)
                                         setModelType(cm.type)
                                      }} className="gap-2">
-                                        {cm.type === ModelType.OPENAI_VIDEO ? <img src="icon/sora-color.svg" className="w-4 h-4" alt="Sora" /> :
-                                         cm.type === ModelType.GEMINI ? <img src="icon/gemini-color.svg" className="w-4 h-4" alt="Gemini" /> :
-                                         cm.type === ModelType.OPENAI || cm.type === ModelType.DALLE ? <img src="icon/openai.svg" className="w-4 h-4" alt="OpenAI" /> :
-                                         <Settings className="w-4 h-4" />}
+                                        <Settings className="w-4 h-4" />
                                         {cm.name}
                                      </DropdownMenuItem>
                                   ))}
@@ -758,167 +598,95 @@ useEffect(() => {
                          </DropdownMenuContent>
                       </DropdownMenu>
 
-                      {generationType === 'image' ? (
-                          <>
-                              {/* 比例选择 - 全模型支持 */}
-                              <DropdownMenu>
-                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
-                                       <div className="w-4 h-4 border-2 border-current rounded-sm" />
-                                       {aspectRatio === 'custom' ? (customAspectRatio || '自定义') : aspectRatio}
-                                       <ChevronDown className="w-3 h-3 opacity-50" />
-                                    </Button>
-                                 </DropdownMenuTrigger>
-                                 <DropdownMenuContent align="start">
-                                    <DropdownMenuItem onClick={() => setAspectRatio("1:1")}>1:1 方形</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => setAspectRatio("16:9")}>16:9 宽屏</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => setAspectRatio("9:16")}>9:16 竖屏</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => setAspectRatio("custom")}>自定义</DropdownMenuItem>
-                                 </DropdownMenuContent>
-                              </DropdownMenu>
+                      {/* 比例选择 - 全模型支持 */}
+                      <DropdownMenu>
+                         <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
+                               <div className="w-4 h-4 border-2 border-current rounded-sm" />
+                               {aspectRatio === 'custom' ? (customAspectRatio || '自定义') : aspectRatio}
+                               <ChevronDown className="w-3 h-3 opacity-50" />
+                            </Button>
+                         </DropdownMenuTrigger>
+                         <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={() => setAspectRatio("1:1")}>1:1 方形</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setAspectRatio("16:9")}>16:9 宽屏</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setAspectRatio("9:16")}>9:16 竖屏</DropdownMenuItem>
+                            {(modelType === ModelType.GEMINI) && (
+                               <DropdownMenuItem onClick={() => setAspectRatio("custom")}>自定义</DropdownMenuItem>
+                            )}
+                         </DropdownMenuContent>
+                      </DropdownMenu>
 
-                              {/* 清晰度/质量选择 - Gemini & DALL-E */}
-                              {(modelType === ModelType.GEMINI || modelType === ModelType.DALLE || model === 'dall-e-3') && (
-                                  <DropdownMenu>
-                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
-                                           {quality === 'auto' ? '自动画质' : quality === 'hd' ? 'HD画质' : quality === 'standard' ? '标准画质' : quality}
-                                           <ChevronDown className="w-3 h-3 opacity-50" />
-                                        </Button>
-                                     </DropdownMenuTrigger>
-                                     <DropdownMenuContent align="start">
-                                        {modelType === ModelType.GEMINI ? (
-                                            <>
-                                               <DropdownMenuItem onClick={() => setQuality("1K")}>1K 画质</DropdownMenuItem>
-                                               <DropdownMenuItem onClick={() => setQuality("2K")}>2K 画质</DropdownMenuItem>
-                                               <DropdownMenuItem onClick={() => setQuality("4K")}>4K 画质</DropdownMenuItem>
-                                            </>
-                                        ) : (
-                                            <>
-                                               <DropdownMenuItem onClick={() => setQuality("auto")}>自动画质</DropdownMenuItem>
-                                               <DropdownMenuItem onClick={() => setQuality("hd")}>HD 高清</DropdownMenuItem>
-                                               <DropdownMenuItem onClick={() => setQuality("standard")}>标准画质</DropdownMenuItem>
-                                            </>
-                                        )}
-                                     </DropdownMenuContent>
-                                  </DropdownMenu>
-                              )}
+                      {/* 清晰度/质量选择 - Gemini & DALL-E */}
+                      {(modelType === ModelType.GEMINI || modelType === ModelType.DALLE || model === 'dall-e-3') && (
+                          <DropdownMenu>
+                             <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
+                                   {quality === 'auto' ? '自动画质' : quality === 'hd' ? 'HD画质' : quality === 'standard' ? '标准画质' : quality}
+                                   <ChevronDown className="w-3 h-3 opacity-50" />
+                                </Button>
+                             </DropdownMenuTrigger>
+                             <DropdownMenuContent align="start">
+                                {modelType === ModelType.GEMINI ? (
+                                    <>
+                                       <DropdownMenuItem onClick={() => setQuality("1K")}>1K 画质</DropdownMenuItem>
+                                       <DropdownMenuItem onClick={() => setQuality("2K")}>2K 画质</DropdownMenuItem>
+                                       <DropdownMenuItem onClick={() => setQuality("4K")}>4K 画质</DropdownMenuItem>
+                                    </>
+                                ) : (
+                                    <>
+                                       <DropdownMenuItem onClick={() => setQuality("auto")}>自动画质</DropdownMenuItem>
+                                       <DropdownMenuItem onClick={() => setQuality("hd")}>HD 高清</DropdownMenuItem>
+                                       <DropdownMenuItem onClick={() => setQuality("standard")}>标准画质</DropdownMenuItem>
+                                    </>
+                                )}
+                             </DropdownMenuContent>
+                          </DropdownMenu>
+                      )}
 
-                              {/* 生成数量 - 全模型支持 */}
-                              <DropdownMenu>
-                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
-                                       生成{n}张
-                                       <ChevronDown className="w-3 h-3 opacity-50" />
-                                    </Button>
-                                 </DropdownMenuTrigger>
-                                 <DropdownMenuContent align="start">
-                                    {[1, 2, 3, 4].map(num => (
-                                       <DropdownMenuItem key={num} onClick={() => setN(num)}>{num} 张</DropdownMenuItem>
-                                    ))}
-                                 </DropdownMenuContent>
-                              </DropdownMenu>
-                              
-                              {/* 图片上传按钮 */}
-                              <Button
-                                 variant="ghost"
-                                 size="sm"
-                                 className="h-9 w-9 p-0 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg"
-                                 onClick={() => fileInputRef.current?.click()}
-                                 title="上传参考图"
-                              >
-                                  <ImageIcon className="w-4 h-4" />
-                              </Button>
-                              <input
-                                  ref={fileInputRef}
-                                  type="file"
-                                  accept="image/jpeg,image/png"
-                                  className="hidden"
-                                  onChange={handleFileUpload}
-                                  multiple
-                              />
+                      {/* 生成数量 - 全模型支持 */}
+                      <DropdownMenu>
+                         <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
+                               生成{n}张
+                               <ChevronDown className="w-3 h-3 opacity-50" />
+                            </Button>
+                         </DropdownMenuTrigger>
+                         <DropdownMenuContent align="start">
+                            {[1, 2, 3, 4].map(num => (
+                               <DropdownMenuItem key={num} onClick={() => setN(num)}>{num} 张</DropdownMenuItem>
+                            ))}
+                         </DropdownMenuContent>
+                      </DropdownMenu>
+                      
+                      {/* 图片上传按钮 */}
+                      <Button
+                         variant="ghost"
+                         size="sm"
+                         className="h-9 w-9 p-0 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg"
+                         onClick={() => fileInputRef.current?.click()}
+                         title="上传参考图"
+                      >
+                          <ImageIcon className="w-4 h-4" />
+                      </Button>
+                      <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                          multiple
+                      />
 
-                              {/* 自定义比例输入框 */}
-                              {aspectRatio === 'custom' && (
-                                 <input
-                                    type="text"
-                                    placeholder="例如 21:9"
-                                    className="h-9 w-24 px-2 text-sm bg-gray-50 border-none rounded-lg focus:ring-1 focus:ring-orange-500"
-                                    value={customAspectRatio}
-                                    onChange={(e) => setCustomAspectRatio(e.target.value)}
-                                 />
-                              )}
-                          </>
-                      ) : (
-                          <>
-                              {/* Video Options */}
-                              {/* Duration */}
-                              <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
-                                          {videoDuration} 秒
-                                          <ChevronDown className="w-3 h-3 opacity-50" />
-                                      </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="start">
-                                      <DropdownMenuItem onClick={() => setVideoDuration("10")}>10 秒</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => setVideoDuration("15")}>15 秒</DropdownMenuItem>
-                                  </DropdownMenuContent>
-                              </DropdownMenu>
-
-                              {/* Size/AspectRatio */}
-                              <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
-                                          {aspectRatio === '9:16' ? '竖屏 (9:16)' : '横屏 (16:9)'}
-                                          <ChevronDown className="w-3 h-3 opacity-50" />
-                                      </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="start">
-                                      <DropdownMenuItem onClick={() => setAspectRatio("9:16")}>竖屏 (720x1280)</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => setAspectRatio("16:9")}>横屏 (1280x720)</DropdownMenuItem>
-                                  </DropdownMenuContent>
-                              </DropdownMenu>
-                              
-                              {/* Style */}
-                              {model.includes('sora') && (
-                                  <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                          <Button variant="ghost" size="sm" className="h-9 px-3 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg gap-2">
-                                              {videoStyle || '默认风格'}
-                                              <ChevronDown className="w-3 h-3 opacity-50" />
-                                          </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="start">
-                                          <DropdownMenuItem onClick={() => setVideoStyle("thanksgiving")}>感恩节</DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => setVideoStyle("comic")}>漫画</DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => setVideoStyle("news")}>新闻</DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => setVideoStyle("selfie")}>自拍</DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => setVideoStyle("nostalgic")}>复古</DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => setVideoStyle("anime")}>动漫</DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                  </DropdownMenu>
-                              )}
-
-                              {/* Reference Image Upload Button */}
-                              <Button
-                                 variant="ghost"
-                                 size="sm"
-                                 className="h-9 w-9 p-0 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg"
-                                 onClick={() => fileInputRef.current?.click()}
-                                 title="上传参考图"
-                              >
-                                  <ImageIcon className="w-4 h-4" />
-                              </Button>
-                              <input
-                                  ref={fileInputRef}
-                                  type="file"
-                                  accept="image/jpeg,image/png"
-                                  className="hidden"
-                                  onChange={handleFileUpload}
-                                  multiple
-                              />
-                          </>
+                      {/* 自定义比例输入框 */}
+                      {aspectRatio === 'custom' && (
+                         <input
+                            type="text"
+                            placeholder="例如 21:9"
+                            className="h-9 w-24 px-2 text-sm bg-gray-50 border-none rounded-lg focus:ring-1 focus:ring-orange-500"
+                            value={customAspectRatio}
+                            onChange={(e) => setCustomAspectRatio(e.target.value)}
+                         />
                       )}
                    </div>
 
@@ -992,7 +760,7 @@ useEffect(() => {
                               <div className="absolute inset-0 bg-white/5"></div>
                               <div className="relative z-10 flex flex-col items-center animate-pulse">
                                   <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
-                                  <h3 className="text-lg font-bold mb-1">{item.type === 'video' ? '视频生成中...' : '正在绘制中...'}</h3>
+                                  <h3 className="text-lg font-bold mb-1">正在绘制中...</h3>
                                   <LoadingTimer />
                               </div>
                           </div>
@@ -1002,44 +770,25 @@ useEffect(() => {
                       {item.status === 'failed' && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-20">
                               <AlertTriangle className="w-10 h-10 text-red-500 mb-3" />
-                              <h3 className="text-base font-semibold text-red-600 mb-2">{item.type === 'video' ? '视频生成失败' : '生图失败'}</h3>
+                              <h3 className="text-base font-semibold text-red-600 mb-2">生图失败</h3>
                               <p className="text-xs text-red-500/80 mb-1">模型请求或生成失败，请重新尝试。</p>
                               <p className="text-xs text-red-500/80">如连续多次失败，请暂时切换其它模型使用。也可以向站长反馈处理。</p>
                           </div>
                       )}
 
                       {/* Success State */}
-                      {item.status === 'success' && (
+                      {item.status === 'success' && item.url && (
                         <>
-                           {item.type === 'video' ? (
-                               <div className="w-full h-full bg-black flex items-center justify-center relative group">
-                                   <video
-                                       src={item.videoUrl || item.url}
-                                       className="w-full h-full object-cover"
-                                       controls={false}
-                                       muted
-                                       loop
-                                       playsInline
-                                       onMouseOver={e => e.currentTarget.play()}
-                                       onMouseOut={e => e.currentTarget.pause()}
-                                   />
-                                   <div className="absolute top-2 right-2 bg-black/50 px-2 py-1 rounded text-[10px] text-white font-mono flex items-center gap-1">
-                                       <Video className="w-3 h-3" />
-                                       VIDEO
-                                   </div>
-                               </div>
-                           ) : (
-                               <Image
-                                   src={item.url!}
-                                   alt={`Generated image ${idx + 1}`}
-                                   fill
-                                   className="object-cover transition-transform duration-500 group-hover:scale-105"
-                                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                               />
-                           )}
+                           <Image
+                              src={item.url}
+                              alt={`Generated image ${idx + 1}`}
+                              fill
+                              className="object-cover transition-transform duration-500 group-hover:scale-105"
+                              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                           />
                            
                            {/* 底部信息条 */}
-                           <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
+                           <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
                                <div className="flex justify-between items-center text-white/90 text-xs font-medium">
                                    <span>
                                        {modelOptions.find(m => m.value === item.model)?.label || item.model}
@@ -1080,9 +829,8 @@ useEffect(() => {
                                         e.stopPropagation();
                                         try {
                                           const link = document.createElement('a');
-                                          link.href = item.type === 'video' ? (item.videoUrl || item.url!) : item.url!;
-                                          link.download = item.type === 'video' ? `generated-video-${Date.now()}.mp4` : `generated-${Date.now()}.png`;
-                                          link.target = '_blank'; // For videos, often better to open in new tab if download fails
+                                          link.href = item.url!;
+                                          link.download = `generated-${Date.now()}.png`;
                                           document.body.appendChild(link);
                                           link.click();
                                           document.body.removeChild(link);
@@ -1090,7 +838,7 @@ useEffect(() => {
                                           console.error("Download failed", e);
                                         }
                                      }}
-                                     title={item.type === 'video' ? "下载视频" : "下载图片"}
+                                     title="下载图片"
                                   >
                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                   </button>
@@ -1165,32 +913,19 @@ useEffect(() => {
       <Dialog open={showImageDialog} onOpenChange={setShowImageDialog}>
         <DialogContent className="max-w-[95vw] w-full sm:max-w-[95vw] h-[90vh] p-0 border-0 bg-transparent shadow-none [&>button]:absolute [&>button]:top-4 [&>button]:right-4 [&>button]:bg-black/20 [&>button]:hover:bg-black/40 [&>button]:text-white [&>button]:w-10 [&>button]:h-10 [&>button]:rounded-full [&>button]:backdrop-blur-sm [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:z-50">
            <div className="visually-hidden">
-             <DialogTitle>查看详情</DialogTitle>
-             <DialogDescription>查看生成内容的详细预览</DialogDescription>
+             <DialogTitle>查看大图</DialogTitle>
+             <DialogDescription>查看生成图片的详细预览</DialogDescription>
            </div>
           <div className="relative w-full h-full flex items-center justify-center bg-transparent">
-            {generatedImages[currentImageIndex] && (
-               generatedImages[currentImageIndex].type === 'video' ? (
-                   <div className="w-full h-full flex items-center justify-center">
-                       <video
-                           src={generatedImages[currentImageIndex].videoUrl || generatedImages[currentImageIndex].url}
-                           controls
-                           autoPlay
-                           className="max-w-full max-h-full rounded-lg shadow-2xl"
-                       />
-                   </div>
-               ) : (
-                   generatedImages[currentImageIndex].url && (
-                       <Image
-                         src={generatedImages[currentImageIndex].url!}
-                         alt="Preview"
-                         fill
-                         className="object-contain"
-                         quality={100}
-                         priority
-                       />
-                   )
-               )
+            {generatedImages[currentImageIndex]?.url && (
+               <Image
+                 src={generatedImages[currentImageIndex].url!}
+                 alt="Preview"
+                 fill
+                 className="object-contain"
+                 quality={100}
+                 priority
+               />
             )}
           </div>
         </DialogContent>

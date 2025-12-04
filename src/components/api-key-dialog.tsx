@@ -93,7 +93,7 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
                 BASE_URL (模型服务商网址)
               </label>
               <Input
-                placeholder="https://magic666.top"
+                placeholder="https://..."
                 value={baseUrl}
                 onChange={(e) => {
                   setBaseUrl(e.target.value)
@@ -105,7 +105,7 @@ export function ApiKeyDialog({ open, onOpenChange }: ApiKeyDialogProps) {
                 <p className="text-sm text-red-500 mt-1">{errors.baseUrl}</p>
               )}
               <p className="text-[10px] text-gray-400">
-                 例如: https://magic666.top 或其他服务商网址，注：末尾不要带 / 符号。
+                 例如: https://yooart.top 或其他服务商网址，注：末尾不要带 / 符号。
               </p>
             </div>
             

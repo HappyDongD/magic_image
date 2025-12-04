@@ -5,24 +5,6 @@ export interface GeneratedImage {
   model: string
   createdAt: string
   aspectRatio: string
-  type?: 'image' | 'video'
-  videoUrl?: string
-  duration?: string
-  status?: 'loading' | 'success' | 'failed' | 'queued'
-}
-
-export interface GenerationResult {
-  id: string
-  status: 'loading' | 'success' | 'failed' | 'queued'
-  url?: string
-  videoUrl?: string
-  model: string
-  duration?: string
-  error?: string
-  aspectRatio: string
-  type: 'image' | 'video'
-  progress?: number
-  isPlaceholder?: boolean
 }
 
 export interface ApiConfig {
@@ -42,8 +24,7 @@ export enum ModelType {
   DALLE = 'dalle',
   OPENAI = 'openai',
   GEMINI = 'gemini',
-  MJ = 'mj',
-  OPENAI_VIDEO = 'openai_video'
+  MJ = 'mj'
 }
 
 // 自定义模型接口
@@ -71,37 +52,4 @@ export interface GenerateImageRequest {
   n?: number
   quality?: 'auto' | 'high' | 'medium' | 'low' | 'hd' | 'standard' | '1K' | '2K' | '4K'
   mask?: string
-}
-
-export type VideoStyle = 'thanksgiving' | 'comic' | 'news' | 'selfie' | 'nostalgic' | 'anime' | string
-
-export interface GenerateVideoRequest {
-  prompt: string
-  model: string
-  input_reference?: File | Blob // base64 string or File
-  source_images?: string[] // array of base64 strings or URLs
-  seconds?: string
-  size?: string
-  character_url?: string
-  character_timestamps?: string // "start,end"
-  watermark?: boolean
-  character_from_task?: string
-  character_create?: boolean
-  style?: VideoStyle
-}
-
-export interface VideoTaskResponse {
-  id: string
-  object: string
-  model: string
-  status: string
-  progress: number
-  created_at: number
-  size?: string
-  seconds?: string
-  quality?: string
-  video_url?: string
-  completed_at?: number
-  detail?: any
-  character?: any
 }

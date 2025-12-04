@@ -1,5 +1,5 @@
 import { storage } from "./storage"
-import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType, GenerateVideoRequest, VideoTaskResponse } from "@/types"
+import { GenerationModel, AspectRatio, ImageSize, DalleImageData, ModelType } from "@/types"
 import { toast } from "sonner"
 import { AlertCircle } from "lucide-react"
 
@@ -543,105 +543,5 @@ export const api = {
       callbacks.onError('处理响应数据失败')
     }
     reader.releaseLock()
-  },
-
-  generateVideo: async (request: GenerateVideoRequest): Promise<VideoTaskResponse> => {
-    const config = await storage.getApiConfig()
-    if (!config) {
-      showErrorToast("请先设置 API 配置")
-      throw new Error('请先设置 API 配置')
-    }
-
-    if (!config.key || !config.baseUrl) {
-      showErrorToast("API 配置不完整，请检查 API Key 和基础地址")
-      throw new Error('API 配置不完整')
-    }
-
-    const requestUrl = buildRequestUrl(config.baseUrl, '/v1/videos')
-    
-    const formData = new FormData()
-    formData.append('prompt', request.prompt)
-    formData.append('model', request.model)
-    
-    if (request.input_reference) {
-      formData.append('input_reference', request.input_reference)
-    }
-    // Handle multiple source images
-    if (request.source_images && request.source_images.length > 0) {
-      for (const imgStr of request.source_images) {
-          if (imgStr.startsWith('data:')) {
-              const response = await fetch(imgStr);
-              const blob = await response.blob();
-              formData.append('input_reference', blob, 'image.png');
-          } else {
-             // It's a URL
-             formData.append('input_reference_url', imgStr);
-          }
-      }
-    }
-
-    if (request.seconds) formData.append('seconds', request.seconds)
-    if (request.size) formData.append('size', request.size)
-    
-    // Character related fields
-    if (request.character_url) formData.append('character_url', request.character_url)
-    if (request.character_timestamps) formData.append('character_timestamps', request.character_timestamps)
-    if (request.watermark !== undefined) formData.append('watermark', String(request.watermark))
-    if (request.character_from_task) formData.append('character_from_task', request.character_from_task)
-    if (request.character_create !== undefined) formData.append('character_create', String(request.character_create))
-    
-    // Style - only for sora_video2
-    if (request.style && request.model.startsWith('sora')) {
-        formData.append('style', request.style)
-    }
-
-    const response = await fetchNoTimeout(requestUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.key}`
-        // Content-Type is set automatically for FormData
-      },
-      body: formData
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      const errorMessage = errorData.message || errorData.error?.message || '视频生成任务创建失败'
-      showErrorToast(errorMessage)
-      throw new Error(errorMessage)
-    }
-
-    return response.json()
-  },
-
-  getVideoStatus: async (taskId: string): Promise<VideoTaskResponse> => {
-    const config = await storage.getApiConfig()
-    if (!config) {
-        showErrorToast("请先设置 API 配置")
-        throw new Error('请先设置 API 配置')
-      }
-  
-      if (!config.key || !config.baseUrl) {
-        showErrorToast("API 配置不完整，请检查 API Key 和基础地址")
-        throw new Error('API 配置不完整')
-      }
-
-    const requestUrl = buildRequestUrl(config.baseUrl, `/v1/videos/${taskId}`)
-
-    const response = await fetchNoTimeout(requestUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${config.key}`
-      }
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      const errorMessage = errorData.message || errorData.error?.message || '获取任务状态失败'
-      showErrorToast(errorMessage)
-      throw new Error(errorMessage)
-    }
-
-    return response.json()
   }
-}
+} 

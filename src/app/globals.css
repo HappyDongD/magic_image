@@ -133,7 +133,20 @@
   white-space: nowrap;
   border-width: 0;
 }
-/* Markdown 内容样式 */
+
+/* Custom Background Pattern */
+.bg-dot-pattern {
+  background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: center;
+}
+
+.dark .bg-dot-pattern {
+  background-image: radial-gradient(#333 1px, transparent 1px);
+}
+
+
+/* Markdown Content Styles */
 .markdown-content {
   line-height: 1.6;
 }
@@ -244,143 +257,4 @@
 
 .markdown-content tr:nth-child(even) {
   background-color: #f9f9f9;
-}
-
-/* --- Sidebar Ticker / Ads --- */
-.ticker-container {
-  width: 100%; /* Adapts to sidebar width */
-  height: 400px;
-  margin-top: 20px;
-  overflow: hidden;
-  position: relative;
-  /* Gradient Mask */
-  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
-  border: none !important;
-}
-
-.ticker-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  animation: scroll-vertical 20s linear infinite;
-  padding: 20px 0; /* Add padding for better mask effect */
-}
-
-.ticker-container:hover .ticker-wrapper {
-  animation-play-state: paused;
-}
-
-@keyframes scroll-vertical {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(-50%); }
-}
-
-.model-card {
-  display: flex;
-  align-items: center;
-  background: var(--card);
-  border-radius: 12px;
-  padding: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  border: 1px solid var(--border);
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.model-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  border-color: var(--ring);
-}
-
-.model-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: var(--secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.model-icon img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-}
-
-.model-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.model-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--foreground);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.model-desc {
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
-
-.model-price {
-  font-size: 12px;
-  color: #ff6b00;
-  font-weight: 500;
-  margin-top: 2px;
-}
-
-.badge {
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.badge-hot {
-  background: #fff0f0;
-  color: #ff4d4f;
-  border: 1px solid #ffccc7;
-}
-
-.badge-new {
-  background: #f0f5ff;
-  color: #2f54eb;
-  border: 1px solid #adc6ff;
-}
-
-.badge-star {
-  background: #fff7e6;
-  color: #fa8c16;
-  border: 1px solid #ffd591;
-}
-
-/* Dark mode adjustments */
-.dark .badge-hot {
-  background: rgba(255, 77, 79, 0.1);
-  border-color: rgba(255, 77, 79, 0.3);
-}
-
-.dark .badge-new {
-  background: rgba(47, 84, 235, 0.1);
-  border-color: rgba(47, 84, 235, 0.3);
-}
-
-.dark .badge-star {
-  background: rgba(250, 140, 22, 0.1);
-  border-color: rgba(250, 140, 22, 0.3);
 }
