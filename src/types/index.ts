@@ -23,8 +23,7 @@ export interface DalleImageData {
 export enum ModelType {
   DALLE = 'dalle',
   OPENAI = 'openai',
-  GEMINI = 'gemini',
-  MJ = 'mj'
+  GEMINI = 'gemini'
 }
 
 // 自定义模型接口
