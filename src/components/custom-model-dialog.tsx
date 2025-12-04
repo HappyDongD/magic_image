@@ -131,11 +131,12 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
                   <SelectContent>
                     <SelectItem value={ModelType.DALLE}>DALL-E 格式</SelectItem>
                     <SelectItem value={ModelType.OPENAI}>OpenAI 格式</SelectItem>
+                    <SelectItem value={ModelType.OPENAI_VIDEO}>OpenAI 视频格式</SelectItem>
                     <SelectItem value={ModelType.GEMINI}>Gemini 格式</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500 mt-1">
-                  DALL-E：用于图片生成接口 | OpenAI：用于 Chat/图片生成接口 | Gemini：用于 Gemini 图片生成接口
+                  DALL-E：用于图片生成接口 | OpenAI：用于 Chat/图片生成接口 | Gemini：用于 Gemini 图片生成接口 | OpenAI 视频：用于 Sora 等视频生成模型
                 </p>
               </div>
               <Button onClick={handleAddModel}>
@@ -161,7 +162,7 @@ export function CustomModelDialog({ open, onOpenChange, onSelectModel }: CustomM
                       <p className="font-medium truncate">{model.name}</p>
                       <p className="text-xs text-gray-500 truncate">{model.value}</p>
                       <p className="text-xs text-gray-500">
-                        类型: {model.type === ModelType.DALLE ? 'DALL-E' : model.type === ModelType.GEMINI ? 'Gemini' : 'OpenAI'}
+                        类型: {model.type === ModelType.DALLE ? 'DALL-E' : model.type === ModelType.GEMINI ? 'Gemini' : model.type === ModelType.OPENAI_VIDEO ? 'OpenAI 视频' : 'OpenAI'}
                       </p>
                     </div>
                     <div className="flex gap-2">
